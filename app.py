@@ -19,3 +19,5 @@ hr_sensor = hr_fifo(250, 27)
 tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = hr_sensor.handler)
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
+
+print()
