@@ -34,6 +34,7 @@ class hr_fifo(Fifo):
         self.bpm = None
         self.last_y = 0
         self.led = Led(22, mode=Pin.OUT, brightness=1)
+        self.PPI = []
 
     def handler(self, tid):
         val = self.av.read_u16()
@@ -66,6 +67,7 @@ class hr_fifo(Fifo):
                 if len(self.beats) > self.MAX_BEATS:
                     self.beats.pop(0)
                 self.bpm = self.calculate_bpm()
+                self.calculate_ppi()
                 self.led.on()
 
             if val < threshold_off and self.beat:
@@ -83,6 +85,12 @@ class hr_fifo(Fifo):
                 intervals = len(self.beats) - 1 
                 return int((intervals / beat_time) * 60)
         return None
+    
+    def calculate_ppi(self):
+        if self.bpm:
+            PPI_val = 60000 // self.bpm
+            self.PPI.append(PPI_val)
+            print(self.PPI)
 
     def refresh(self, val, min_v, max_v):
         if max_v - min_v > 0:
