@@ -226,6 +226,22 @@ class OLED:
                     self.oled.pixel(col_i, row_i, c)
                     
         self.oled.show()
+        
+    def calc_rmmds(self, values):
+        newvals = []
+        cur_val = 0
+        for i in range(len(values)):
+            if i < (len(values) - 1):
+                value = values[i]
+                print(value)
+                value = values[i+1] - values[i]
+                
+                value = value**2
+                newvals.append(value)
+            
+        #print(newvals)
+        RMMSD = sum(newvals)/len(newvals)
+        print(RMMSD)
 
             
 hr_sensor = hr_fifo(250, 27)
