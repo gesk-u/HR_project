@@ -95,18 +95,17 @@ class hr_fifo(Fifo):
             self.PPI.append(PPI_val)
             
             print("len ppi", len(self.PPI))
-            #print("PPI", self.PPI)
+            
             
     def calc_rmmds(self):
         cleaned_PPI = self.PPI[10:]
-      
-        cleaned_PPI = []
+        print("PPI", self.PPI)
         for p in self.PPI:
             if cleaned_PPI and abs(p - cleaned_PPI[-1]) < 250:
                 cleaned_PPI.append(p)
             elif not cleaned_PPI:
                 cleaned_PPI.append(p)
-        
+        print("clean PPI", cleaned_PPI)
         diffs = []
         
         for i in range(len(cleaned_PPI) - 1): 
@@ -132,7 +131,7 @@ class hr_fifo(Fifo):
 
             self.RMMDS.append(int(rmmds))
             print("RMMDS", self.RMMDS)
-
+            print("PPI", self.PPI)
 
     def refresh(self, val, min_v, max_v):
         if max_v - min_v > 0:
