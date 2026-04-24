@@ -28,7 +28,7 @@ class hr_fifo(Fifo):
         self.MAX_HISTORY = 200
         
         self.beats = []
-        self.MAX_BEATS = 30
+        self.MAX_BEATS = 20
 
         self.beat = False
         self.bpm = None
@@ -36,6 +36,8 @@ class hr_fifo(Fifo):
         self.led = Led(22, mode=Pin.OUT, brightness=1)
         self.PPI = []
         self.RMMDS = []
+        self.smooth_buf = []
+        self.SMOOTH_WINDOW = 4 
 
     def handler(self, tid):
         val = self.av.read_u16()
@@ -65,9 +67,12 @@ class hr_fifo(Fifo):
             if val > threshold_on and not self.beat:
                 self.beat = True
                 self.beats.append(time.ticks_ms())
+                
                 if len(self.beats) > self.MAX_BEATS:
                     self.beats.pop(0)
-                self.bpm = self.calculate_bpm()
+                    
+                if self.calculate_bpm():
+                    self.bpm = self.calculate_bpm()
                 self.calculate_ppi()
                 if len(self.PPI) % 50 == 0:
                     self.calc_rmmds()
@@ -76,6 +81,7 @@ class hr_fifo(Fifo):
             if val < threshold_off and self.beat:
                 self.beat = False
                 self.led.off()
+                
             y = self.last_y
             self.refresh(val, min_v, max_v)
             oled.hr_animation(y, self.last_y, self.bpm, self.beat)
@@ -83,11 +89,24 @@ class hr_fifo(Fifo):
             
 
     def calculate_bpm(self):
-        if len(self.beats) >= 2:
-            beat_time = time.ticks_diff(self.beats[-1], self.beats[0]) / 1000
-            if beat_time > 0:
-                intervals = len(self.beats) - 1 
-                return int((intervals / beat_time) * 60)
+        if len(self.beats) > 3:
+            
+            diffs = []
+            for i in range(len(self.beats) - 1):
+                diff = time.ticks_diff(self.beats[i+1], self.beats[i])
+            
+                if 450 < diff < 2000:
+                    diffs.append(diff)
+            if not diffs:
+                return None
+                
+            avg_interval = sum(diffs) / len(diffs)
+            
+            bpm = 60000 / avg_interval
+            return bpm
+            #if beat_time > 0:
+                #intervals = len(self.beats) - 1 
+                #return int((intervals / beat_time) * 60)
         return None
     
     def calculate_ppi(self):
@@ -138,8 +157,15 @@ class hr_fifo(Fifo):
 
     def refresh(self, val, min_v, max_v):
         if max_v - min_v > 0:
-            y = 64 - int(32 * (val - min_v) / (max_v - min_v))
+            smoothed = self.smooth(val)  
+            y = 64 - int(32 * (smoothed - min_v) / (max_v - min_v))
             self.last_y = y
+    
+    def smooth(self, val):
+        self.smooth_buf.append(val)
+        if len(self.smooth_buf) > self.SMOOTH_WINDOW:
+             self.smooth_buf.pop(0)
+        return sum(self.smooth_buf) // len(self.smooth_buf)
 
 
 class Rotary_encoder(Fifo):
