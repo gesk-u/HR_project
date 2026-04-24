@@ -35,6 +35,7 @@ class hr_fifo(Fifo):
         self.last_y = 0
         self.led = Led(22, mode=Pin.OUT, brightness=1)
         self.PPI = []
+        self.RMMDS = []
 
     def handler(self, tid):
         val = self.av.read_u16()
@@ -68,6 +69,8 @@ class hr_fifo(Fifo):
                     self.beats.pop(0)
                 self.bpm = self.calculate_bpm()
                 self.calculate_ppi()
+                if len(self.PPI) == 50:
+                    self.calc_rmmds()
                 self.led.on()
 
             if val < threshold_off and self.beat:
@@ -90,7 +93,46 @@ class hr_fifo(Fifo):
         if self.bpm:
             PPI_val = 60000 // self.bpm
             self.PPI.append(PPI_val)
-            print(self.PPI)
+            
+            print("len ppi", len(self.PPI))
+            #print("PPI", self.PPI)
+            
+    def calc_rmmds(self):
+        cleaned_PPI = self.PPI[10:]
+      
+        cleaned_PPI = []
+        for p in self.PPI:
+            if cleaned_PPI and abs(p - cleaned_PPI[-1]) < 250:
+                cleaned_PPI.append(p)
+            elif not cleaned_PPI:
+                cleaned_PPI.append(p)
+        
+        diffs = []
+        
+        for i in range(len(cleaned_PPI) - 1): 
+            diff = cleaned_PPI[i+1] - cleaned_PPI[i]
+            diffs.append(diff)
+            
+    
+        #mean = sum(abs(d) for d in diffs) / len(diffs)
+        #variance = sum((abs(d) - mean) ** 2 for d in diffs) / len(diffs)
+        #std = variance ** 0.5
+        #threshold = mean + 2 * std
+        #print("threshold", threshold)  
+        newvals = []
+        for d in diffs:
+            if abs(d) < 25:
+                newvals.append(d**2)
+    
+        #print("filtered out:", [d for d in diffs if abs(d) >= threshold])    
+        print(newvals)
+        if newvals:
+            print(newvals)
+            rmmds = (sum(newvals) / len(newvals)) ** 0.5
+
+            self.RMMDS.append(int(rmmds))
+            print("RMMDS", self.RMMDS)
+
 
     def refresh(self, val, min_v, max_v):
         if max_v - min_v > 0:
@@ -227,14 +269,14 @@ class OLED:
                     
         self.oled.show()
         
-    def calc_rmmds(self, values):
+    def calc_rmmds(self):
         newvals = []
         cur_val = 0
-        for i in range(len(values)):
-            if i < (len(values) - 1):
-                value = values[i]
+        for i in range(len(self.PPI)):
+            if i < (len(self.PPI) - 1):
+                value = self.PPI[i]
                 print(value)
-                value = values[i+1] - values[i]
+                value = self.PPI[i+1] - self.PPI[i]
                 
                 value = value**2
                 newvals.append(value)
