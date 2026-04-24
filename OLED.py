@@ -80,6 +80,11 @@ class hr_fifo(Fifo):
             self.refresh(val, min_v, max_v)
             oled.hr_animation(y, self.last_y, self.bpm, self.beat)
             
+            if rot_turn == 1:
+                threshold_off = threshold_off * 0.9
+            if rot_turn == 2:
+                threshold_off = threshold_off * 1.1
+            
 
     def calculate_bpm(self):
         if len(self.beats) >= 2:
