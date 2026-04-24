@@ -100,7 +100,6 @@ class hr_fifo(Fifo):
     def calc_rmmds(self):
         cleaned_PPI = self.PPI[10:]
       
-        cleaned_PPI = []
         for p in self.PPI:
             if cleaned_PPI and abs(p - cleaned_PPI[-1]) < 250:
                 cleaned_PPI.append(p)
