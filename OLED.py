@@ -69,7 +69,7 @@ class hr_fifo(Fifo):
                     self.beats.pop(0)
                 self.bpm = self.calculate_bpm()
                 self.calculate_ppi()
-                if len(self.PPI) == 50:
+                if len(self.PPI) % 50 == 0:
                     self.calc_rmmds()
                 self.led.on()
 
@@ -79,11 +79,7 @@ class hr_fifo(Fifo):
             y = self.last_y
             self.refresh(val, min_v, max_v)
             oled.hr_animation(y, self.last_y, self.bpm, self.beat)
-            
-            if rot_turn == 1:
-                threshold_off = threshold_off * 0.9
-            if rot_turn == 2:
-                threshold_off = threshold_off * 1.1
+         
             
 
     def calculate_bpm(self):
@@ -103,12 +99,14 @@ class hr_fifo(Fifo):
             
             
     def calc_rmmds(self):
-        cleaned_PPI = self.PPI[10:]
+        cut_PPI = self.PPI[10:]
+        cleaned_PPI = []
         print("PPI", self.PPI)
-        for p in self.PPI:
-            if cleaned_PPI and abs(p - cleaned_PPI[-1]) < 250:
-                cleaned_PPI.append(p)
-            elif not cleaned_PPI:
+        
+        for i in range(len(cut_PPI) - 1):
+            if abs(cut_PPI[i+1] - cut_PPI[i]) < 400:
+                cleaned_PPI.append(cut_PPI[i])
+            elif not cut_PPI:
                 cleaned_PPI.append(p)
         print("clean PPI", cleaned_PPI)
         diffs = []
@@ -125,8 +123,8 @@ class hr_fifo(Fifo):
         #print("threshold", threshold)  
         newvals = []
         for d in diffs:
-            if abs(d) < 25:
-                newvals.append(d**2)
+            #if abs(d) < 25:
+            newvals.append(d**2)
     
         #print("filtered out:", [d for d in diffs if abs(d) >= threshold])    
         print(newvals)
