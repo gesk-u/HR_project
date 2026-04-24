@@ -154,6 +154,38 @@ class hr_fifo(Fifo):
             self.RMMDS.append(int(rmmds))
             print("RMMDS", self.RMMDS)
             print("PPI", self.PPI)
+            
+    def calc_sdnn(self):
+        cut_PPI = self.PPI[10:]
+        cleaned_PPI = []
+        print("PPI", self.PPI)
+        
+        for i in range(len(cut_PPI) - 1):
+            if abs(cut_PPI[i+1] - cut_PPI[i]) < 400:
+                cleaned_PPI.append(cut_PPI[i])
+            elif not cut_PPI:
+                cleaned_PPI.append(p)
+        print("clean PPI", cleaned_PPI)
+        
+        mean = sum(cleaned_PPI) / len(cleaned_PPI)
+        
+        for i in range(len(cleaned_PPI) - 1): 
+            diff = cleaned_PPI[i+1] - mean
+            diffs.append(diff)
+            
+        newvals = []
+        for d in diffs:
+            #if abs(d) < 25:
+            newvals.append(d**2)
+            
+        print(newvals)
+        if newvals:
+            print(newvals)
+            SDNN = (sum(newvals) / len(newvals)) ** 0.5
+
+            self.SDNN.append(int(sdnn))
+            print("SDNN", self.SDNN)
+            print("PPI", self.PPI)
 
     def refresh(self, val, min_v, max_v):
         if max_v - min_v > 0:
