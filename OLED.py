@@ -50,42 +50,54 @@ class hr_fifo(Fifo):
 
 
     def run(self, oled, rot_turn):
-        while self.has_data():
-            
-            val = self.get()
+        #states are
+        #0 - not enough data
+        #1 - got enough data, still running
+        #2 - got enough data, button to quit pressed
+        rot_turn = 1
+        state = 0
+        while state < 2:
+            if self.has_data():
+                val = self.get()
 
-            self.history.append(val)
-            if len(self.history) > self.MAX_HISTORY:
-                self.history.pop(0)
+                self.history.append(val)
+                if len(self.history) > self.MAX_HISTORY:
+                    self.history.pop(0)
+                    state = 1
 
-            min_v = min(self.history)
-            max_v = max(self.history)
+                min_v = min(self.history)
+                max_v = max(self.history)
 
-            threshold_on  = (min_v + max_v * 3) // 4
-            threshold_off = (min_v + max_v) // 2
+                threshold_on  = (min_v + max_v * 3) // 4
+                threshold_off = (min_v + max_v) // 2
 
-            if val > threshold_on and not self.beat:
-                self.beat = True
-                self.beats.append(time.ticks_ms())
-                
-                if len(self.beats) > self.MAX_BEATS:
-                    self.beats.pop(0)
+                if val > threshold_on and not self.beat:
+                    self.beat = True
+                    self.beats.append(time.ticks_ms())
                     
-                if self.calculate_bpm():
-                    self.bpm = self.calculate_bpm()
-                self.calculate_ppi()
-                if len(self.PPI) % 50 == 0:
-                    self.calc_rmmds()
-                self.led.on()
+                    if len(self.beats) > self.MAX_BEATS:
+                        self.beats.pop(0)
+                        
+                    if self.calculate_bpm():
+                        self.bpm = self.calculate_bpm()
+                    self.calculate_ppi()
+                    if len(self.PPI) % 50 == 0:
+                        self.calc_rmmds()
+                    self.led.on()
 
-            if val < threshold_off and self.beat:
-                self.beat = False
-                self.led.off()
+                if val < threshold_off and self.beat:
+                    self.beat = False
+                    self.led.off()
+                    
+                y = self.last_y
+                self.refresh(val, min_v, max_v)
+                oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
-            y = self.last_y
-            self.refresh(val, min_v, max_v)
-            oled.hr_animation(y, self.last_y, self.bpm, self.beat)
-         
+            if state == 1:
+                if rot.has_data():
+                    rot_turn = rot.get()
+                if rot_turn == 0:
+                    state = 2
             
 
     def calculate_bpm(self):
