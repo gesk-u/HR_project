@@ -344,6 +344,32 @@ class OLED:
         #print(newvals)
         RMMSD = sum(newvals)/len(newvals)
         print(RMMSD)
+        
+    def intro_anim(self):
+        with open('intro.py', 'r') as f:
+            exec(f.read())
+            
+        rot_turn = 1
+            
+        for row_i, row in enumerate(LOGOSTART):
+            if rot.has_data():
+                rot_turn = rot.get()
+            if rot_turn != 0:
+                for col_i, c in enumerate(row):
+                    self.oled.pixel(col_i + 51, row_i + 10, c)
+                self.oled.show()
+            
+        while rot_turn != 0:
+            for i in range(len(HEARTS) - 1):
+                if rot.has_data():
+                    rot_turn = rot.get()
+                if rot_turn != 0:
+                    for row_i, row in enumerate(HEARTS[i]):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i, row_i, c)
+                    self.oled.show()
+
+                    time.sleep(INTRODELAY)
 
             
 hr_sensor = hr_fifo(250, 27)
@@ -352,6 +378,8 @@ tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = hr_sensor.handle
 
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
+
+oled.intro_anim()
 
 oled.show_menu(0, *OPTIONS)
 while True:
