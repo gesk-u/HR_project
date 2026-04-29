@@ -19,6 +19,7 @@ HEART = [
 
 class Kubios:
     def __init___(self, wifi_name, wifi_password):
+        pass
         
 
 class HR_sensor(Fifo):
