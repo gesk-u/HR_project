@@ -156,7 +156,7 @@ class Data():
     def calculate_bpm(self):
         if self.mean_ppi:
             self.bpm = 60000 / self.mean_ppi
-            self.bmp_list.append(self.bpm)
+            self.bpm_list.append(self.bpm)
         if self.bpm_list:
             self.mean_bpm = sum(self.bpm_list) // len(self.bpm_list)
  
