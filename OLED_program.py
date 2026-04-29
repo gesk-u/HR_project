@@ -17,10 +17,19 @@ HEART = [
     [0,0,0,0,0,0,0,0,0],
 ]
 
+POWER = [
+    [0,0,0,1,0,0,0],
+    [0,1,0,1,0,1,0],
+    [1,0,0,1,0,0,1],
+    [1,0,0,1,0,0,1],
+    [1,0,0,0,0,0,1],
+    [0,1,0,0,0,1,0],
+    [0,0,1,1,1,0,0]
+]
+
 class Kubios:
     def __init___(self, wifi_name, wifi_password):
         pass
-        
 
 class HR_sensor(Fifo):
     def __init__(self, size, adc_pin):
@@ -306,9 +315,11 @@ class OLED:
             self.menu.y_arrow, 1
         )
         self.oled.show()
-    
         
-                
+        for row_i, row in enumerate(POWER):
+            for col_i, c in enumerate(row):
+                self.oled.pixel(col_i + 74, row_i + 56, c)
+        self.oled.show()                
                 
     def enter_option(self):
         self.oled.fill(0)
@@ -335,14 +346,47 @@ class OLED:
                     
         self.oled.show()
         
+    def intro_anim(self):
+        with open('intro.py', 'r') as f:
+            exec(f.read())
+            
+        rot_turn = 1
+            
+        for row_i, row in enumerate(LOGOSTART):
+            if rot.has_data():
+                rot_turn = rot.get()
+            if rot_turn != 0:
+                for col_i, c in enumerate(row):
+                    self.oled.pixel(col_i + 51, row_i + 10, c)
+                self.oled.show()
+            
+        while rot_turn != 0:
+            for i in range(len(HEARTS) - 1):
+                if rot.has_data():
+                    rot_turn = rot.get()
+                if rot_turn != 0:
+                    for row_i, row in enumerate(HEARTS[i]):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i, row_i, c)
+                    self.oled.show()
+
+                    time.sleep(INTRODELAY)
+                    
+    def quit(self):
+        self.oled.fill(0)
+        self.oled.show()
+        raise SystemExit
+        
 
 av = HR_sensor(250, 27)
 data = Data(av)
-OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History")
+OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
 tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = av.handler)
 
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
+
+oled.intro_anim()
 
 oled.show_menu(0, *OPTIONS)
 while True:
@@ -354,12 +398,14 @@ while True:
             idx = oled.menu.selected_index
             print("Selected:", OPTIONS[idx])
             oled.enter_option()
-            if oled.menu.selected_index == 0:
+            if oled.menu.selected_index == OPTIONS.index("Measure HR"):
                 y = data.last_y
                 data.run(oled, rot_turn)
                 if rot_turn == 0:
                     oled.show_menu(rot_turn, *OPTIONS)
                 #oled.hr_animation(hr_sensor.last_y, y, hr_sensor.bpm, hr_sensor.beat)
+            if oled.menu.selected_index == OPTIONS.index("Shutdown"):
+                oled.quit()
                 
         else:
             oled.show_menu(rot_turn, *OPTIONS)
