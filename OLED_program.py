@@ -99,46 +99,54 @@ class Data():
             l.pop(0)
 
     def run(self, oled, rot_turn):
-        while self.av.has_data():
-            
-            self.sample = self.av.get()
-
-            self.history.append(self.sample)
-            
-            self.if_full(self.history, self.MAX_HISTORY)
-
-            self.max_sample = max(self.history)
-            self.min_sample = min(self.history)
-
-            self.threshold_on  = (self.min_sample + self.max_sample * 3) // 4
-            self.threshold_off = (self.min_sample + self.max_sample) // 2
-
-            if self.sample > self.threshold_on and not self.beat:
-                now = time.ticks_ms()
-                if time.ticks_diff(now, self.last_beat_time) > self.MIN_BEAT_INTERVAL:
-                    self.beat = True
-                    self.last_beat_time = now
-                    self.beats.append(now)
-                    self.if_full(self.beats, self.MAX_BEATS)
+        state = 0
+        rot_turn = 1
+        while state == 0:
+            if self.av.has_data():
                 
+                self.sample = self.av.get()
+
+                self.history.append(self.sample)
+                
+                self.if_full(self.history, self.MAX_HISTORY)
+
+                self.max_sample = max(self.history)
+                self.min_sample = min(self.history)
+
+                self.threshold_on  = (self.min_sample + self.max_sample * 3) // 4
+                self.threshold_off = (self.min_sample + self.max_sample) // 2
+
+                if self.sample > self.threshold_on and not self.beat:
+                    now = time.ticks_ms()
+                    if time.ticks_diff(now, self.last_beat_time) > self.MIN_BEAT_INTERVAL:
+                        self.beat = True
+                        self.last_beat_time = now
+                        self.beats.append(now)
+                        self.if_full(self.beats, self.MAX_BEATS)
                     
-                if self.calculate_bpm():
-                    self.bpm = self.calculate_bpm()
-                self.calculate_ppi()
-                if len(self.ppi_list) % 50 == 0:
-                    self.calc_rmmds()
-                self.led.on()
+                        
+                    if self.calculate_bpm():
+                        self.bpm = self.calculate_bpm()
+                    self.calculate_ppi()
+                    if len(self.ppi_list) % 50 == 0:
+                        self.calc_rmmds()
+                    self.led.on()
 
-            if self.sample < self.threshold_off and self.beat:
-                self.beat = False
-                self.led.off()
+                if self.sample < self.threshold_off and self.beat:
+                    self.beat = False
+                    self.led.off()
+                    
+                y = self.last_y
+                #print("Low", min_v)
+                #print("Hight", max_v)
+                self.refresh()
+                print(self.last_y)
+                oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
-            y = self.last_y
-            #print("Low", min_v)
-            #print("Hight", max_v)
-            self.refresh()
-            print(self.last_y)
-            oled.hr_animation(y, self.last_y, self.bpm, self.beat)
+            if rot.has_data():
+                rot_turn = rot.get()
+            if rot_turn == 0:
+                state = 1
          
             
 
