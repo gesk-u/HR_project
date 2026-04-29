@@ -314,7 +314,6 @@ class OLED:
             self.menu.x_arrow,
             self.menu.y_arrow, 1
         )
-        self.oled.show()
         
         for row_i, row in enumerate(POWER):
             for col_i, c in enumerate(row):
