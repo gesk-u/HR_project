@@ -72,6 +72,8 @@ class Data():
         self.avg_ppi_interval = 0
         
         self.bpm = None
+        self.bpm_list = []
+        self.mean_bpm = 0
         self.last_y = 0
         
         self.led = Led(22, mode=Pin.OUT, brightness=1)
@@ -82,8 +84,15 @@ class Data():
 
         self.smooth_buf = []
         self.SMOOTH_WINDOW = 4
-        self.last_beat_time = 0  
-    
+        self.last_beat_time = 0
+        
+    def get_data(self):
+        return {
+            "Mean PPI": self.mean_PPI,
+            "Mean BPM": self.mean_bpm,
+            "RMMDS": self.RMMDS,
+            "SDNN": 0
+            }
     # Removes old values from full list
     def if_full(self, l, max_l):
         if len(l) > max_l:
@@ -147,7 +156,10 @@ class Data():
     def calculate_bpm(self):
         if self.mean_ppi:
             self.bpm = 60000 / self.mean_ppi
-
+            self.bmp_list.append(self.bpm)
+        if self.bpm_list:
+            self.mean_bpm = sum(self.bpm_list) // len(self.bpm_list)
+ 
 
             
     def calc_rmmds(self):
