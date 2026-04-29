@@ -17,6 +17,9 @@ HEART = [
     [0,0,0,0,0,0,0,0,0],
 ]
 
+class Kubios:
+    def __init___(self, wifi_name, wifi_password):
+        
 
 class HR_sensor(Fifo):
     def __init__(self, size, adc_pin):
