@@ -18,6 +18,16 @@ HEART = [
     [0,0,0,0,0,0,0,0,0],
 ]
 
+POWER = [
+    [0,0,0,1,0,0,0],
+    [0,1,0,1,0,1,0],
+    [1,0,0,1,0,0,1],
+    [1,0,0,1,0,0,1],
+    [1,0,0,0,0,0,1],
+    [0,1,0,0,0,1,0],
+    [0,0,1,1,1,0,0]
+]
+
 class hr_fifo(Fifo):
 
     def __init__(self, size, adc_pin):
@@ -57,14 +67,13 @@ class hr_fifo(Fifo):
         #2 - got enough data, button to quit pressed
         rot_turn = 1
         state = 0
-        while state < 2:
+        while state < 1:
             if self.has_data():
                 val = self.get()
 
                 self.history.append(val)
                 if len(self.history) > self.MAX_HISTORY:
                     self.history.pop(0)
-                    state = 1
 
                 min_v = min(self.history)
                 max_v = max(self.history)
@@ -94,11 +103,10 @@ class hr_fifo(Fifo):
                 self.refresh(val, min_v, max_v)
                 oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
-            if state == 1:
-                if rot.has_data():
-                    rot_turn = rot.get()
-                if rot_turn == 0:
-                    state = 2
+            if rot.has_data():
+                rot_turn = rot.get()
+            if rot_turn == 0:
+                state = 1
             
 
     def calculate_bpm(self):
@@ -255,6 +263,8 @@ class OLED:
         
         self.menu = Menu(8)
         
+        self.powpos = 0
+        
     
     class Menu:
         @property
@@ -312,6 +322,14 @@ class OLED:
             self.menu.x_arrow,
             self.menu.y_arrow, 1
         )
+        
+        self.powpos = self.powpos + 1
+        print(self.powpos)
+        
+        for row_i, row in enumerate(POWER):
+            for col_i, c in enumerate(row):
+                self.oled.pixel(col_i + 74, row_i + 56, c)
+        
         self.oled.show()
     
         
