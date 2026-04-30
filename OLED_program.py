@@ -4,7 +4,7 @@ from fifo import Fifo
 import time
 from piotimer import Piotimer
 from led import Led
-
+#time.localtime
 HEART = [
     [0,0,1,0,1,0,0,0,0],
     [0,0,0,0,0,0,0,0,0],
@@ -50,10 +50,10 @@ class HR_sensor(Fifo):
 
 class Data():
 
-    def __init__(self, hr_sensor):
+    def __init__(self, hr_sensor, sampling_rate=250):
         
         self.av = hr_sensor
-        
+        self.sampling_rate = sampling_rate
         self.history = []
         self.MAX_HISTORY = 270
         self.sample = 0
@@ -66,8 +66,8 @@ class Data():
         self.beats = []
         self.MAX_BEATS = 20
         self.beat = False
-        self.MIN_BEAT_INTERVAL = 300
-        self.MAX_BEAT_INTERVAL = 1500
+        self.MIN_BEAT_INTERVAL = 500
+        self.MAX_BEAT_INTERVAL = 1200
         self.last_beat_time = 0 
         self.avg_ppi_interval = 0
         
@@ -83,12 +83,13 @@ class Data():
         self.ppi_list = []
 
         self.smooth_buf = []
-        self.SMOOTH_WINDOW = 4
+        self.SMOOTH_WINDOW = 10
         self.last_beat_time = 0
         
     def get_data(self):
         return {
-            "Mean PPI": self.mean_PPI,
+            "Time": 0,
+            "Mean PPI": self.mean_ppi,
             "Mean BPM": self.mean_bpm,
             "RMMDS": self.RMMDS,
             "SDNN": 0
@@ -103,32 +104,36 @@ class Data():
         rot_turn = 1
         while state == 0:
             if self.av.has_data():
-                
                 self.sample = self.av.get()
-
+                self.sample = self.smooth()    
+                #self.sample = self.filte.process(self.sample)
                 self.history.append(self.sample)
-                
                 self.if_full(self.history, self.MAX_HISTORY)
 
                 self.max_sample = max(self.history)
+                #print("MAx sample", self.max_sample)
                 self.min_sample = min(self.history)
+                #print("Min sample", self.min_sample)
 
                 self.threshold_on  = (self.min_sample + self.max_sample * 3) // 4
                 self.threshold_off = (self.min_sample + self.max_sample) // 2
 
                 if self.sample > self.threshold_on and not self.beat:
                     now = time.ticks_ms()
-                    if time.ticks_diff(now, self.last_beat_time) > self.MIN_BEAT_INTERVAL:
-                        self.beat = True
+                    if self.last_beat_time == 0:
                         self.last_beat_time = now
-                        self.beats.append(now)
-                        self.if_full(self.beats, self.MAX_BEATS)
+                    diff = time.ticks_diff(now, self.last_beat_time)
+                    self.beat = True
+                    self.last_beat_time = now
+                    self.beats.append(now)
+                    self.if_full(self.beats, self.MAX_BEATS)
                     
                         
                     if self.calculate_bpm():
                         self.bpm = self.calculate_bpm()
                     self.calculate_ppi()
-                    if len(self.ppi_list) % 50 == 0:
+                    if len(self.ppi_list) % 10 == 0:
+                        print(self.get_data())
                         self.calc_rmmds()
                     self.led.on()
 
@@ -137,29 +142,71 @@ class Data():
                     self.led.off()
                     
                 y = self.last_y
-                #print("Low", min_v)
-                #print("Hight", max_v)
                 self.refresh()
-                print(self.last_y)
+                #print(self.last_y)
                 oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
             if rot.has_data():
                 rot_turn = rot.get()
             if rot_turn == 0:
                 state = 1
-         
+        
             
 
     def calculate_ppi(self):
-        if len(self.beats) > 3:
-            self.ppi_list = []
-            for i in range(len(self.beats) - 1):
-                diff = time.ticks_diff(self.beats[i+1], self.beats[i])
-                
-                if self.MIN_BEAT_INTERVAL < diff < self.MAX_BEAT_INTERVAL:
-                    self.ppi_list.append(diff)
-                if self.ppi_list:
-                    self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
+        if len(self.beats) < 3:
+            return
+            #print("PPI", len(self.ppi_list))
+            
+        diff = time.ticks_diff(self.beats[-1], self.beats[-2])
+        print("DIFF ppi", diff)
+        if self.MIN_BEAT_INTERVAL < diff < self.MAX_BEAT_INTERVAL:
+            self.ppi_list.append(diff)
+            self.if_full(self.ppi_list, 20)
+            #print(len(self.ppi_list))
+            print("ppi_List", self.ppi_list)
+            if len(self.ppi_list) >= 10:
+                self.clean_ppi_list()
+            self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
+
+    def clean_ppi_list(self, max_change_percent=0.15):
+        if not self.ppi_list or len(self.ppi_list) < 2:
+            return self.ppi_list
+        
+        
+        sorted_ppis = sorted(self.ppi_list)
+        median_ppi = sorted_ppis[len(sorted_ppis) // 2]
+        
+        
+        clean_list = []
+        start_idx = 0
+    
+        for i in range(len(self.ppi_list)):
+            if abs(self.ppi_list[i] - median_ppi) / median_ppi <= max_change_percent:
+                clean_list.append(self.ppi_list[i])
+                start_idx = i + 1
+                break
+
+        if not clean_list:
+            clean_list = [median_ppi]
+            start_idx = 0
+
+        
+        for i in range(start_idx, len(self.ppi_list)):
+            prev_beat = clean_list[-1]
+            current_beat = self.ppi_list[i]
+
+            
+            change = abs(current_beat - prev_beat) / prev_beat
+
+            if change <= max_change_percent:
+                clean_list.append(current_beat)
+            else:
+                print(f"Artifact detected and removed: {current_beat}ms")
+            
+        
+        self.ppi_list = clean_list
+        
 
     def calculate_bpm(self):
         if self.mean_ppi:
@@ -174,7 +221,8 @@ class Data():
         ppi_diffs = []
         for i in range(len(self.ppi_list) - 1): 
             ppi_diff = self.ppi_list[i+1] - self.ppi_list[i]
-            ppi_diffs.append(ppi_diff)
+            if ppi_diff < 120:
+                ppi_diffs.append(ppi_diff)
  
         ppi_sqr = []
         for d in ppi_diffs:
@@ -223,9 +271,8 @@ class Data():
 
     def refresh(self):
         if self.max_sample - self.min_sample > 0:
-            print("True")
             smoothed = self.smooth() 
-            self.last_y = 64 - int(32 * (smoothed - self.min_sample) / (self.max_sample - self.min_sample))
+            self.last_y = 64 - int(32 * (self.sample - self.min_sample) / (self.max_sample - self.min_sample))
             
     
     def smooth(self):
@@ -240,6 +287,8 @@ class Rotary_encoder(Fifo):
         super().__init__(memory)
         self.a = Pin(pin_a, Pin.IN, Pin.PULL_UP)
         self.b = Pin(pin_b, Pin.IN, Pin.PULL_UP)
+        self.rot_fifo = Fifo(30)
+        self.push_fifo = Fifo(30)
         self.push = Pin(pin_push, Pin.IN, Pin.PULL_UP)
         self.last_rot_time = 0
         self.last_push_time = 0
@@ -250,18 +299,19 @@ class Rotary_encoder(Fifo):
     def handler_rotate(self, pin):
         now = time.ticks_ms()
         if time.ticks_diff(now, self.last_rot_time) > 50:
-            if self.b.value() == 1:
-                print("handler1")
-                self.put(1)
+            if self.b.value():
+                #print("handler1")
+                self.rot_fifo.put(1)
             else:                      
-                self.put(2)
+                self.rot_fifo.put(2)
                 print("handler2")
             self.last_rot_time = now
             
     def handler_push(self, pin):
         now = time.ticks_ms()
         if time.ticks_diff(now, self.last_push_time) > 350:
-            self.put(0)
+            self.push_fifo.put(0)
+            print("done")
             self.last_push_time = now
 
 class Menu:
@@ -365,20 +415,22 @@ class OLED:
                     
         self.oled.show()
         
-    def intro_anim(self):
+    def intro_anim(self, rot):
         with open('intro.py', 'r') as f:
             exec(f.read())
             
         rot_turn = 1
             
         for row_i, row in enumerate(LOGOSTART):
-            if rot.has_data():
-                rot_turn = rot.get()
+            if rot.push_fifo.has_data():
+                print("has")
+                rot_turn = rot.push_fifo.get()
+                print(rot_turn)
             if rot_turn != 0:
                 for col_i, c in enumerate(row):
                     self.oled.pixel(col_i + 51, row_i + 10, c)
                 self.oled.show()
-            
+        print(rot_turn)
         while rot_turn != 0:
             for i in range(len(HEARTS) - 1):
                 if rot.has_data():
@@ -397,6 +449,26 @@ class OLED:
         raise SystemExit
         
 
+class App:
+    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, history):
+        self.delay = delay_time
+        self.oled = oled
+        self.data = data
+        self.rot = rot
+        self.kubios = kubios
+        self.mqtt = mqtt
+        self.history = history
+        self.option = 0
+        self.rot_change = None
+        self.btn_val = False
+        self.state = 0
+    
+    #def check_btn_press(self):
+        #if self.rot.
+        
+    
+    
+    
 av = HR_sensor(250, 27)
 data = Data(av)
 OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
@@ -405,12 +477,15 @@ tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = av.handler)
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
 
-oled.intro_anim()
+#oled.intro_anim(rot)
 
 oled.show_menu(0, *OPTIONS)
 while True:
-    if rot.has_data():
-        rot_turn = rot.get()
+    if rot.push_fifo.has_data():
+        rot_turn = rot.push_fifo.get()
+        if rot.rot_fifo.has_data():
+            rot_rot = rot.rot_fifo.get()
+            
         print("rot_turn:", rot_turn)
         
         if rot_turn == 0:
@@ -420,6 +495,7 @@ while True:
             if oled.menu.selected_index == OPTIONS.index("Measure HR"):
                 y = data.last_y
                 data.run(oled, rot_turn)
+                print(data.get_data())
                 if rot_turn == 0:
                     oled.show_menu(rot_turn, *OPTIONS)
                 #oled.hr_animation(hr_sensor.last_y, y, hr_sensor.bpm, hr_sensor.beat)
@@ -427,5 +503,5 @@ while True:
                 oled.quit()
                 
         else:
-            oled.show_menu(rot_turn, *OPTIONS)
+            oled.show_menu(rot_rot, *OPTIONS)
         
