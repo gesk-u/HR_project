@@ -83,7 +83,7 @@ class Data():
         self.ppi_list = []
 
         self.smooth_buf = []
-        self.SMOOTH_WINDOW = 10
+        self.SMOOTH_WINDOW = 6
         self.last_beat_time = 0
         
     def get_data(self):
@@ -99,10 +99,8 @@ class Data():
         if len(l) > max_l:
             l.pop(0)
 
-    def run(self, oled, rot_turn):
-        state = 0
-        rot_turn = 1
-        while state == 0:
+    def run(self, oled):
+        for _ in range(50):
             if self.av.has_data():
                 self.sample = self.av.get()
                 self.sample = self.smooth()    
@@ -146,10 +144,7 @@ class Data():
                 #print(self.last_y)
                 oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
-            if rot.has_data():
-                rot_turn = rot.get()
-            if rot_turn == 0:
-                state = 1
+            
         
             
 
@@ -280,6 +275,37 @@ class Data():
         if len(self.smooth_buf) > self.SMOOTH_WINDOW:
              self.smooth_buf.pop(0)
         return sum(self.smooth_buf) // len(self.smooth_buf)
+
+    def reset(self):
+        self.history = []
+        self.MAX_HISTORY = 270
+        self.sample = 0
+        
+        self.max_sample = 0
+        self.min_sample = 0
+        self.threshold_on = 0
+        self.threshold_off = 0
+        
+        self.beats = []
+        self.MAX_BEATS = 20
+        self.beat = False
+        self.MIN_BEAT_INTERVAL = 500
+        self.MAX_BEAT_INTERVAL = 1200
+        self.last_beat_time = 0 
+        self.avg_ppi_interval = 0
+        
+        self.bpm = None
+        self.bpm_list = []
+        self.mean_bpm = 0
+        self.last_y = 0
+        
+        self.mean_ppi = 0
+        self.RMMDS = []
+        self.ppi_list = []
+
+        self.smooth_buf = []
+        self.last_beat_time = 0
+
 
 
 class Rotary_encoder(Fifo):
@@ -415,33 +441,30 @@ class OLED:
                     
         self.oled.show()
         
-    def intro_anim(self, rot):
+    def intro_anim(self, push_fifo=None):
         with open('intro.py', 'r') as f:
             exec(f.read())
             
-        rot_turn = 1
-            
         for row_i, row in enumerate(LOGOSTART):
-            if rot.push_fifo.has_data():
-                print("has")
-                rot_turn = rot.push_fifo.get()
-                print(rot_turn)
-            if rot_turn != 0:
-                for col_i, c in enumerate(row):
-                    self.oled.pixel(col_i + 51, row_i + 10, c)
-                self.oled.show()
-        print(rot_turn)
-        while rot_turn != 0:
-            for i in range(len(HEARTS) - 1):
-                if rot.has_data():
-                    rot_turn = rot.get()
-                if rot_turn != 0:
-                    for row_i, row in enumerate(HEARTS[i]):
-                        for col_i, c in enumerate(row):
-                            self.oled.pixel(col_i, row_i, c)
-                    self.oled.show()
+            for col_i, c in enumerate(row):
+                self.oled.pixel(col_i + 51, row_i + 10, c)
+            self.oled.show()
+        
+        
+        for i in range(len(HEARTS) - 1):
+            if push_fifo and push_fifo.has_data():
+                push_fifo.get()
+                return True
 
-                    time.sleep(INTRODELAY)
+
+            for row_i, row in enumerate(HEARTS[i]):
+                for col_i, c in enumerate(row):
+                    self.oled.pixel(col_i, row_i, c)
+            self.oled.show()
+
+            time.sleep(INTRODELAY)
+
+        return False
                     
     def quit(self):
         self.oled.fill(0)
@@ -463,11 +486,75 @@ class App:
         self.btn_val = False
         self.state = 0
     
-    #def check_btn_press(self):
-        #if self.rot.
+    def check_btn_press(self):
+        if self.rot.push_fifo.has_data():
+            self.change = self.rot.push_fifo.get()
+            if self.change == 0:
+                if self.btn_val == 0:
+                    self.btn_val = 1
+                else:
+                    self.btn_val = 0
+            else:
+                while self.rot.push_fifo.has_data():
+                    self.rot.push_fifo.get()
+
+        return self.btn_val
+    
+    def _change_menu(self):
+        rot_turn = self.rot.rot_fifo.get()
+        print(rot_turn)
+        self.oled.show_menu(rot_turn, *OPTIONS)
+        if self.check_btn_press():
+            self.btn_val = False
+            self.option = self.oled.menu.selected_index
+            print("Selected:", self.option)
+
+    def state_off(self):
+        self.oled.oled.fill(0)
+        self.oled.oled.show()
+
+    def anim_state(self):
+        interrupted = self.oled.intro_anim(push_fifo=self.rot.push_fifo)
+        if interrupted:
+            self.btn_val = False
+            self.state = 2
+
+    
+    def first_menu(self):
+        self.oled.show_menu(0, *OPTIONS)
+    
+    def state_menu(self):
+        while self.rot.rot_fifo.has_data():
+            self._change_menu()
+
+    def change_option_state(self):
+        if self.option == 0:
+            self.state = 3
+        elif self.option == 1:
+            self.state = 6
+        elif self.option == 2:
+            self.state = 5
+        elif self.option == 3:
+            self.state = 6
+        elif self.option == 4:
+            self.state = 7
+        elif self.option == 5:
+            self.state = 8
+    # TODO Will ask user to put finger and wait
+    def state_3a(self):
+        app.state = 4
+    def state_3b(self):
+        app.data.run(self.oled)
+    #TODO  returns results
+    def state_3c(self):
+        pass
+
+        
         
     
-    
+kubios = 0
+mqtt = 0   
+history = 0
     
 av = HR_sensor(250, 27)
 data = Data(av)
@@ -476,32 +563,91 @@ tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = av.handler)
 
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
-
+app = App(0.05, oled, data, rot, kubios, mqtt, history)
 #oled.intro_anim(rot)
-
+#app.state = 2
 oled.show_menu(0, *OPTIONS)
 while True:
-    if rot.push_fifo.has_data():
-        rot_turn = rot.push_fifo.get()
-        if rot.rot_fifo.has_data():
-            rot_rot = rot.rot_fifo.get()
-            
-        print("rot_turn:", rot_turn)
+    # Turned off
+    if app.state == 0:
+        app.state_off()
+        if app.check_btn_press():
+            app.btn_val = False
+            app.state = 1
+    # animation 
+    if app.state == 1:
+        app.anim_state()
+        if app.check_btn_press():
+            app.btn_val = False
+            app.state = 2
+    # Menu
+    elif app.state == 2:
+        app.first_menu()
+        while True:
+            app.state_menu()
+            if app.check_btn_press():
+                app.btn_val = False
+                app.state_off()
+                app.change_option_state()
+                app.data.reset()
+                break
+    elif app.state == 3:
+        app.state_3a()
+    elif app.state == 4:
+        while True:
+            app.state_3b()
+            if app.check_btn_press():
+                app.btn_val = False
+                app.state = 2
+                break
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''if rot.push_fifo.has_data():
+    rot_turn = rot.push_fifo.get()
+    if rot.rot_fifo.has_data():
+        rot_rot = rot.rot_fifo.get()
         
-        if rot_turn == 0:
-            idx = oled.menu.selected_index
-            print("Selected:", OPTIONS[idx])
-            oled.enter_option()
-            if oled.menu.selected_index == OPTIONS.index("Measure HR"):
-                y = data.last_y
-                data.run(oled, rot_turn)
-                print(data.get_data())
-                if rot_turn == 0:
-                    oled.show_menu(rot_turn, *OPTIONS)
-                #oled.hr_animation(hr_sensor.last_y, y, hr_sensor.bpm, hr_sensor.beat)
-            if oled.menu.selected_index == OPTIONS.index("Shutdown"):
-                oled.quit()
-                
-        else:
-            oled.show_menu(rot_rot, *OPTIONS)
+    print("rot_turn:", rot_turn)
+    
+    if rot_turn == 0:
+        idx = oled.menu.selected_index
+        print("Selected:", OPTIONS[idx])
+        oled.enter_option()
+        if oled.menu.selected_index == OPTIONS.index("Measure HR"):
+            y = data.last_y
+            data.run(oled, rot_turn)
+            print(data.get_data())
+            if rot_turn == 0:
+                oled.show_menu(rot_turn, *OPTIONS)
+            #oled.hr_animation(hr_sensor.last_y, y, hr_sensor.bpm, hr_sensor.beat)
+        if oled.menu.selected_index == OPTIONS.index("Shutdown"):
+            oled.quit()
+            
+    else:
+        oled.show_menu(rot_rot, *OPTIONS)'''
         
