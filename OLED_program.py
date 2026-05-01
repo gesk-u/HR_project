@@ -66,7 +66,7 @@ class Data():
         self.beats = []
         self.MAX_BEATS = 20
         self.beat = False
-        self.MIN_BEAT_INTERVAL = 500
+        self.MIN_BEAT_INTERVAL = 400
         self.MAX_BEAT_INTERVAL = 1200
         self.last_beat_time = 0 
         self.avg_ppi_interval = 0
@@ -79,7 +79,8 @@ class Data():
         self.led = Led(22, mode=Pin.OUT, brightness=1)
         
         self.mean_ppi = 0
-        self.RMMDS = []
+        self.RMMDS = 0
+        self.SDNN = 0
         self.ppi_list = []
 
         self.smooth_buf = []
@@ -87,12 +88,14 @@ class Data():
         self.last_beat_time = 0
         
     def get_data(self):
+        t = time.localtime()
+        timestamp = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(t[0], t[1], t[2], t[3], t[4], t[5])
         return {
-            "Time": 0,
+            "Time": timestamp,
             "Mean PPI": self.mean_ppi,
             "Mean BPM": self.mean_bpm,
             "RMMDS": self.RMMDS,
-            "SDNN": 0
+            "SDNN": self.SDNN
             }
     # Removes old values from full list
     def if_full(self, l, max_l):
@@ -130,9 +133,10 @@ class Data():
                     if self.calculate_bpm():
                         self.bpm = self.calculate_bpm()
                     self.calculate_ppi()
-                    if len(self.ppi_list) % 10 == 0:
+                    if len(self.ppi_list) / 15 >= 1:
                         print(self.get_data())
                         self.calc_rmmds()
+                        self.calc_sdnn()
                     self.led.on()
 
                 if self.sample < self.threshold_off and self.beat:
@@ -160,11 +164,11 @@ class Data():
             self.if_full(self.ppi_list, 20)
             #print(len(self.ppi_list))
             print("ppi_List", self.ppi_list)
-            if len(self.ppi_list) >= 10:
+            if len(self.ppi_list) >= 15:
                 self.clean_ppi_list()
             self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
 
-    def clean_ppi_list(self, max_change_percent=0.15):
+    def clean_ppi_list(self, max_change_percent=0.25):
         if not self.ppi_list or len(self.ppi_list) < 2:
             return self.ppi_list
         
@@ -213,56 +217,39 @@ class Data():
 
             
     def calc_rmmds(self):
+        
         ppi_diffs = []
         for i in range(len(self.ppi_list) - 1): 
             ppi_diff = self.ppi_list[i+1] - self.ppi_list[i]
-            if ppi_diff < 120:
-                ppi_diffs.append(ppi_diff)
+            ppi_diffs.append(ppi_diff)
  
         ppi_sqr = []
         for d in ppi_diffs:
-            #if abs(d) < 25:
             ppi_sqr.append(d**2)
 
         if ppi_sqr:
-            #print(newvals)
             rmmds = (sum(ppi_sqr) / len(ppi_sqr)) ** 0.5
 
-            self.RMMDS.append(int(rmmds))
-            self.if_full(self.RMMDS, 10)
-            print("RMMDS", self.RMMDS)
+            self.RMMDS = int(rmmds)
             
     def calc_sdnn(self):
-        cut_PPI = self.PPI[10:]
-        cleaned_PPI = []
-        print("PPI", self.PPI)
         
-        for i in range(len(cut_PPI) - 1):
-            if abs(cut_PPI[i+1] - cut_PPI[i]) < 400:
-                cleaned_PPI.append(cut_PPI[i])
-            elif not cut_PPI:
-                cleaned_PPI.append(p)
-        print("clean PPI", cleaned_PPI)
+        mean = sum(self.ppi_list) / len(self.ppi_list)
         
-        mean = sum(cleaned_PPI) / len(cleaned_PPI)
-        
-        for i in range(len(cleaned_PPI) - 1): 
-            diff = cleaned_PPI[i+1] - mean
-            diffs.append(diff)
+        ppi_diffs = []
+        for i in range(len(self.ppi_list) - 1): 
+            diff = self.ppi_list[i+1] - mean
+            ppi_diffs.append(diff)
             
-        newvals = []
-        for d in diffs:
-            #if abs(d) < 25:
-            newvals.append(d**2)
+        ppi_sqr = []
+        for d in ppi_diffs:
+            ppi_sqr.append(d**2)
             
-        print(newvals)
-        if newvals:
-            print(newvals)
-            SDNN = (sum(newvals) / len(newvals)) ** 0.5
-
-            self.SDNN.append(int(sdnn))
-            print("SDNN", self.SDNN)
-            print("PPI", self.PPI)
+        if ppi_sqr:
+            sdnn = (sum(ppi_sqr) / len(ppi_sqr)) ** 0.5
+            self.SDNN = int(sdnn)
+            #print("SDNN", self.SDNN)
+            #print("PPI", self.PPI)
 
     def refresh(self):
         if self.max_sample - self.min_sample > 0:
