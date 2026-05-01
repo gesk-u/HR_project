@@ -254,7 +254,7 @@ class Data():
     def refresh(self):
         if self.max_sample - self.min_sample > 0:
             smoothed = self.smooth() 
-            self.last_y = 64 - int(32 * (self.sample - self.min_sample) / (self.max_sample - self.min_sample))
+            self.last_y = 50 - int(32 * (self.sample - self.min_sample) / (self.max_sample - self.min_sample))
             
     
     def smooth(self):
@@ -409,6 +409,12 @@ class OLED:
         #if self.menu.selected_index == 0:
             #hr_animation(hr_last_)
         
+    def center_text(self,text, y):
+        char_width = 8
+        text_width = len(text) * char_width
+        x = (self.width - text_width) // 2
+        x = max(0, x)
+        self.oled.text(text, x, y, 1)
         
     def hr_animation(self, hr_last_y, hr_y, bpm, beat):
         self.oled.vline(0, 0, 64, 0)
@@ -416,7 +422,13 @@ class OLED:
         
         self.oled.line(125, hr_last_y, 126, hr_y, 1)
         
-        self.oled.fill_rect(0, 0, 128, 32, 0)
+        self.oled.fill_rect(0, 0, 128, 10, 0)
+        self.oled.fill_rect(0, 55, 128, 10, 0)
+        
+        rule = "[X] STOP"
+        
+        self.center_text(rule, 55)
+        
         
         if bpm is not None:
             self.oled.text("%d bpm" % bpm, 12, 0)
