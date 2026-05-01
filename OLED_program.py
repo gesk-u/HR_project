@@ -49,6 +49,7 @@ class HR_sensor(Fifo):
         
 
 class Data():
+    HRV_TIMER = 1000
 
     def __init__(self, hr_sensor, sampling_rate=250):
         
@@ -57,6 +58,7 @@ class Data():
         self.history = []
         self.MAX_HISTORY = 270
         self.sample = 0
+        self.count_sample = 0
         
         self.max_sample = 0
         self.min_sample = 0
@@ -86,7 +88,16 @@ class Data():
         self.smooth_buf = []
         self.SMOOTH_WINDOW = 6
         self.last_beat_time = 0
-        
+        #self.tmr = None
+
+    def read(self):
+        self.tmr = Piotimer(mode = Piotimer.PERIODIC, freq = self.sampling_rate, callback = self.av.handler)
+
+    def read_off(self):
+        while self.av.has_data():
+            self.av.get()
+        self.tmr.deinit()
+
     def get_data(self):
         t = time.localtime()
         timestamp = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(t[0], t[1], t[2], t[3], t[4], t[5])
@@ -102,10 +113,23 @@ class Data():
         if len(l) > max_l:
             l.pop(0)
 
+    def hrv_mode(self, oled):
+        self.clean_ppi_list()
+        self.calc_rmmds()
+        self.calc_sdnn()
+        oled.hrv_display(self.mean_ppi, self.mean_bpm, self.RMMDS, self.SDNN)
+        hrv_history = self.get_data()
+
+        return hrv_history
+
+
+        #self.reset()
+        
     def run(self, oled):
         for _ in range(50):
             if self.av.has_data():
                 self.sample = self.av.get()
+                self.count_sample += 1
                 self.sample = self.smooth()    
                 #self.sample = self.filte.process(self.sample)
                 self.history.append(self.sample)
@@ -133,10 +157,10 @@ class Data():
                     if self.calculate_bpm():
                         self.bpm = self.calculate_bpm()
                     self.calculate_ppi()
-                    if len(self.ppi_list) / 15 >= 1:
-                        print(self.get_data())
-                        self.calc_rmmds()
-                        self.calc_sdnn()
+                    #if len(self.ppi_list) / 15 >= 1:
+                        #print(self.get_data())
+                        #self.calc_rmmds()
+                        #self.calc_sdnn()
                     self.led.on()
 
                 if self.sample < self.threshold_off and self.beat:
@@ -267,6 +291,7 @@ class Data():
         self.history = []
         self.MAX_HISTORY = 270
         self.sample = 0
+        self.count_sample = 0
         
         self.max_sample = 0
         self.min_sample = 0
@@ -427,8 +452,8 @@ class OLED:
         
         rule = "[X] STOP"
         
-        self.center_text(rule, 55)
-        
+        self.center_text(rule, 55) 
+            
         
         if bpm is not None:
             self.oled.text("%d bpm" % bpm, 12, 0)
@@ -439,6 +464,22 @@ class OLED:
                     self.oled.pixel(col_i, row_i, c)
                     
         self.oled.show()
+    
+    def hrv_display(self, ppi, bpm, rmssd, sdnn):
+        self.oled.fill(0)
+        results_titl = ["MEAN HR:", "MEAN PPI:", "RMSSD:", "SDNN:"]
+        results_num = [bpm, ppi, rmssd, sdnn]
+        x = 8
+        y = 0
+        for result, num in zip(results_titl, results_num):
+            x = 8
+            self.oled.text(result, x, y, 1)
+            x = (len(result)* 8) + 8
+            self.oled.text(str(num), x, y)
+            y += 16
+        self.oled.show()
+
+        
         
     def intro_anim(self, push_fifo=None):
         with open('intro.py', 'r') as f:
@@ -464,7 +505,48 @@ class OLED:
             time.sleep(INTRODELAY)
 
         return False
-                    
+
+    def state_3a_anim(self):
+        self.oled.fill(0)
+        ins = ["1. PLACE FINGER", "2. HOLD STILL", "STARTING IN"]
+        dot = "." 
+        self.center_text(ins[0], 8)
+        self.center_text(ins[1], 16)
+        self.center_text(ins[2], 24)
+        self.center_text("3", 40)
+        self.oled.show()
+
+        for x_pos in [108, 114, 120]: # Improved spacing
+            self.oled.text(".", x_pos, 24, 1)
+            self.oled.show()
+            time.sleep(0.3)
+
+        timer = 3
+        count = 2
+
+        for i in range(timer):
+            self.oled.fill_rect(108, 24, 20, 8, 0)
+            self.oled.fill_rect(60, 40, 8, 8, 0)
+
+            for x_pos in [108, 114, 120]:
+                self.oled.text(".", x_pos, 24, 1)
+                self.oled.show()
+                time.sleep(0.1)
+
+            self.center_text(str(count), 40)
+            self.oled.show()
+
+            time.sleep(0.7)
+            count -= 1
+
+        self.oled.fill(0)
+        self.center_text("RECORDING...", 28)
+        self.oled.show()
+        time.sleep(0.2)
+        self.oled.fill(0)
+
+        
+             
     def quit(self):
         self.oled.fill(0)
         self.oled.show()
@@ -499,14 +581,22 @@ class App:
 
         return self.btn_val
     
-    def _change_menu(self):
-        rot_turn = self.rot.rot_fifo.get()
-        print(rot_turn)
-        self.oled.show_menu(rot_turn, *OPTIONS)
+    def state_menu(self):
+        while self.rot.rot_fifo.has_data():
+            rot_turn = self.rot.rot_fifo.get()
+            #print("WORKS")
+            #print(rot_turn)
+            self.oled.show_menu(rot_turn, *OPTIONS)
+            
         if self.check_btn_press():
-            self.btn_val = False
+            print("BUTTON PRESSED",  self.check_btn_press())
             self.option = self.oled.menu.selected_index
+            print("INDEX", self.oled.menu.selected_index)
+            self.change_option_state()
+            print("STATE", app.state)
+            self.state_off()
             print("Selected:", self.option)
+        
 
     def state_off(self):
         self.oled.oled.fill(0)
@@ -522,17 +612,17 @@ class App:
     def first_menu(self):
         self.oled.show_menu(0, *OPTIONS)
     
-    def state_menu(self):
-        while self.rot.rot_fifo.has_data():
-            self._change_menu()
+    #def state_menu(self):
+        #while self.rot.rot_fifo.has_data():
+            #self._change_menu()
 
     def change_option_state(self):
         if self.option == 0:
             self.state = 3
         elif self.option == 1:
-            self.state = 6
-        elif self.option == 2:
             self.state = 5
+        elif self.option == 2:
+            self.state = 6
         elif self.option == 3:
             self.state = 6
         elif self.option == 4:
@@ -541,12 +631,39 @@ class App:
             self.state = 8
     # TODO Will ask user to put finger and wait
     def state_3a(self):
-        app.state = 4
+        self.oled.state_3a_anim()
+        self.state = 4
+
     def state_3b(self):
-        app.data.run(self.oled)
-    #TODO  returns results
-    def state_3c(self):
-        pass
+        self.data.read()
+        while not self.check_btn_press():
+            self.data.run(self.oled)
+        self.data.read_off()
+        self.btn_val = False
+
+    def state_4(self):
+        self.state_3a()
+        self.data.read()
+        print("TIMER", self.data.HRV_TIMER) 
+        while self.data.count_sample < self.data.HRV_TIMER:
+            print("SAMPLE", self.data.count_sample)
+            self.data.run(self.oled)
+            if self.check_btn_press():
+                self.state = 2
+                self.btn_val = False
+                return
+        self.data.read_off()
+        history = self.data.hrv_mode(self.oled)
+        print("HISTORY", history)
+        if self.check_btn_press():
+            self.state_off()
+            self.state = 2
+            self.btn_val = False
+
+        
+        
+
+
 
         
         
@@ -558,7 +675,7 @@ history = 0
 av = HR_sensor(250, 27)
 data = Data(av)
 OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
-tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = av.handler)
+#tmr = Piotimer(mode = Piotimer.PERIODIC, freq = 250, callback = av.handler)
 
 rot = Rotary_encoder(30, 10, 11, 12)              
 oled = OLED(128, 64)
@@ -584,21 +701,28 @@ while True:
         app.first_menu()
         while True:
             app.state_menu()
-            if app.check_btn_press():
+            if app.btn_val:
                 app.btn_val = False
-                app.state_off()
-                app.change_option_state()
-                app.data.reset()
                 break
+
+                
+            #print("STATE", app.state)
+        app.data.reset()
+               
     elif app.state == 3:
         app.state_3a()
     elif app.state == 4:
-        while True:
-            app.state_3b()
-            if app.check_btn_press():
-                app.btn_val = False
-                app.state = 2
-                break
+        app.state_3b()
+        app.state = 2
+    elif app.state == 5:
+        app.state_4()
+        if app.check_btn_press():
+            app.state_off()
+            app.state = 2
+            app.btn_val = False
+        
+
+            
 
 
 
