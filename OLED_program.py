@@ -642,23 +642,22 @@ class App:
         self.btn_val = False
 
     def state_4(self):
-        self.state_3a()
+        if self.data.count_sample < self.data.HRV_TIMER:
+            self.oled.state_3a_anim()
         self.data.read()
         print("TIMER", self.data.HRV_TIMER) 
         while self.data.count_sample < self.data.HRV_TIMER:
             print("SAMPLE", self.data.count_sample)
             self.data.run(self.oled)
             if self.check_btn_press():
+                self.data.read_off()
                 self.state = 2
                 self.btn_val = False
                 return
         self.data.read_off()
         history = self.data.hrv_mode(self.oled)
         print("HISTORY", history)
-        if self.check_btn_press():
-            self.state_off()
-            self.state = 2
-            self.btn_val = False
+        
 
         
         
