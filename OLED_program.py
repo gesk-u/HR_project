@@ -114,7 +114,7 @@ class Data():
             l.pop(0)
 
     def hrv_mode(self, oled):
-        self.clean_ppi_list()
+        self.median_filter()
         self.calc_rmmds()
         self.calc_sdnn()
         oled.hrv_display(self.mean_ppi, self.mean_bpm, self.RMMDS, self.SDNN)
@@ -175,8 +175,45 @@ class Data():
                 oled.hr_animation(y, self.last_y, self.bpm, self.beat)
                 
             
+    def median_filter(self, max_change_percent=0.2, window_size=5):
+        if not self.ppi_list or len(self.ppi_list) < 2:
+            return self.ppi_list
         
+        sorted_ppis = sorted(self.ppi_list)
+        global_median = sorted_ppis[len(sorted_ppis) // 2]
+        
+        clean_list = []
+        start_idx = 0
+        
+        for i in range(len(self.ppi_list)):
+            if abs(self.ppi_list[i] - global_median) / global_median <= max_change_percent:
+                clean_list.append(self.ppi_list[i])
+                start_idx = i + 1
+                break
+
+        if not clean_list:
+            clean_list = [global_median]
+            start_idx = 0
+
+        for i in range(start_idx, len(self.ppi_list)):
+            current_beat = self.ppi_list[i]
+
+            recent_beats = clean_list[-window_size:]
             
+            temp_sorted = sorted(recent_beats)
+            local_baseline = temp_sorted[len(temp_sorted) // 2]
+
+            change = abs(current_beat - local_baseline) / local_baseline
+
+            if change <= max_change_percent:
+                clean_list.append(current_beat)
+            else:
+                print(f"Artifact removed: {current_beat}ms (Baseline was {local_baseline}ms, Change: {change*100:.1f}%)")
+            
+        self.ppi_list = clean_list
+        return self.ppi_list
+               
+                
 
     def calculate_ppi(self):
         if len(self.beats) < 3:
@@ -190,8 +227,8 @@ class Data():
             self.if_full(self.ppi_list, 20)
             #print(len(self.ppi_list))
             print("ppi_List", self.ppi_list)
-            if len(self.ppi_list) >= 15:
-                self.clean_ppi_list()
+            #if len(self.ppi_list) >= 15:
+                #self.clean_ppi_list()
             self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
 
     def clean_ppi_list(self, max_change_percent=0.2):
