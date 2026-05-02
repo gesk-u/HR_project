@@ -118,8 +118,10 @@ class Data():
         self.calc_rmmds()
         self.calc_sdnn()
         oled.hrv_display(self.mean_ppi, self.mean_bpm, self.RMMDS, self.SDNN)
-        hrv_history = self.get_data()
+        
 
+    def hrv_history(self):
+        hrv_history = self.get_data()
         return hrv_history
 
 
@@ -192,7 +194,7 @@ class Data():
                 self.clean_ppi_list()
             self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
 
-    def clean_ppi_list(self, max_change_percent=0.25):
+    def clean_ppi_list(self, max_change_percent=0.2):
         if not self.ppi_list or len(self.ppi_list) < 2:
             return self.ppi_list
         
@@ -645,7 +647,7 @@ class App:
         if self.data.count_sample < self.data.HRV_TIMER:
             self.oled.state_3a_anim()
         self.data.read()
-        print("TIMER", self.data.HRV_TIMER) 
+        #print("TIMER", self.data.HRV_TIMER) 
         while self.data.count_sample < self.data.HRV_TIMER:
             print("SAMPLE", self.data.count_sample)
             self.data.run(self.oled)
@@ -655,8 +657,7 @@ class App:
                 self.btn_val = False
                 return
         self.data.read_off()
-        history = self.data.hrv_mode(self.oled)
-        print("HISTORY", history)
+        self.data.hrv_mode(self.oled)
         
 
         
@@ -716,6 +717,8 @@ while True:
     elif app.state == 5:
         app.state_4()
         if app.check_btn_press():
+            history = app.data.hrv_history()
+            print("HISTORY", history)
             app.state_off()
             app.state = 2
             app.btn_val = False
