@@ -4,6 +4,10 @@ from fifo import Fifo
 import time
 from piotimer import Piotimer
 from led import Led
+from umqtt.simple import MQTTClient
+import network
+import ubinascii
+import json
 
 HEART = [
     [0,0,1,0,1,0,0,0,0],
@@ -27,9 +31,138 @@ POWER = [
     [0,0,1,1,1,0,0]
 ]
 
+class Wifi:
+    def __init__(self):   
+        self.selected_ssid = ""
+        self.password = ""
+        self.wlan = network.WLAN(network.STA_IF)
+        self.mac = 0
+
+    def get_pico_mac(self):
+        mac_bytes = self.wlan.config("mac")
+        self.mac = ubinascii.hexlify(mac_bytes).decode().upper()
+        return self.mac
+
+    def wifi_ana(self):
+        self.selected_ssid = "Tkach"
+        self.password = "Gesku0911"
+
+    def default_wifi(self):
+        self.selected_ssid = "KME751_Group_8"
+        self.password = "TkachGrantLay"
+
+    def wifi_on(self):
+        self.wlan.active(True)
+
+        # Connect only if not already connected.
+        if not self.wlan.isconnected():
+            print("Connecting to Wi-Fi...")
+            self.wlan.connect(self.selected_ssid, self.password)
+
+            # Keep waiting until the Pico successfully connects.
+            while not self.wlan.isconnected():
+                time.sleep_ms(250)
+
+        # Show the Pico's local IP address after connection.
+        print("Wi-Fi connected:", self.wlan.ifconfig()[0])
+        return self.wlan
+
 class Kubios:
-    def __init___(self, wifi_name, wifi_password):
-        pass
+    BROKER_IP = "KME751G008.asuscomm.com"
+    BROKER_PORT = 1883
+    REQUEST_TOPIC = b"kubios/request"
+    RESPONSE_TOPIC = b"kubios/response"
+    OUTPUT_FILE = "kubios_response.json"
+    TIMEOUT_MS = 15000
+    
+    def __init__(self):
+        self.client = None
+        self.latest_response = None
+        
+    def mqtt_client(self, mac):
+        self.client = MQTTClient(
+            client_id=(mac + "_ext").encode(),
+            server=self.BROKER_IP, 
+            port=self.BROKER_PORT)
+        self.client.set_callback(self.mqtt_callback)
+
+    def mqtt_callback(self, topic, msg):
+        if topic != self.RESPONSE_TOPIC:
+            return
+        try:
+            self.latest_response = json.loads(msg)
+        except ValueError:
+            self.latest_response = None
+
+    def connect_and_subscribe(self):
+        self.client.connect()
+        self.client.subscribe(self.RESPONSE_TOPIC)
+
+    def send_request(self, mac, ppi_list):
+        payload = self.build_request_payload(mac, ppi_list)
+        self.client.publish(self.REQUEST_TOPIC, json.dumps(payload))
+
+    def wait_for_response(self):
+        start = time.ticks_ms()
+
+        while time.ticks_diff(time.ticks_ms(), start) < self.TIMEOUT_MS:
+            self.client.check_msg()
+            if self.latest_response:
+                print("Response received:")
+                #print(json.dumps(self.latest_response))
+
+                self.save_json_to_pico(self.OUTPUT_FILE, self.latest_response)
+                print("Saved to file:", self.OUTPUT_FILE)
+                break
+
+            time.sleep_ms(200)
+        self.client.disconnect()
+        print("Client disconnected")
+        return self.latest_response
+
+    def build_request_payload(self, mac_address, ppi_list):
+        if ppi_list:
+            return {
+                "mac": mac_address,
+                "type": "RRI",
+                "data": ppi_list,
+                "analysis": {"type": "readiness"}
+            }
+    def show_responce(self, oled):
+        if not self.latest_response:
+            oled.oled.fill(0)
+            oled.center_text("No response", 28)
+            oled.oled.show()
+            return
+
+        result = self.latest_response.get("data", {}).get("analysis", {})
+        bpm   = result.get("mean_hr_bpm", "N/A")
+        bpm = str(round(float(bpm)))
+        ppi   = result.get("mean_rr_ms",  "N/A")
+        ppi = str(round(float(ppi)))
+        rmssd = result.get("rmssd_ms",    "N/A")
+        rmssd = str(round(float(rmssd)))
+        sdnn  = result.get("sdnn_ms",     "N/A")
+        sdnn = str(round(float(sdnn)))
+        sns   = result.get("sns_index",   "N/A")
+        sns = str(round(float(sns), 3))
+        pns   = result.get("pns_index",   "N/A")
+        pns = str(round(float(pns), 3))
+
+        oled.oled.fill(0)
+        oled.oled.text("HR:"    + str(bpm),   0,  0, 1)
+        oled.oled.text("PPI:"   + str(ppi),   0, 10, 1)
+        oled.oled.text("RMSSD:" + str(rmssd), 0, 20, 1)
+        oled.oled.text("SDNN:"  + str(sdnn),  0, 30, 1)
+        oled.oled.text("SNS:"   + str(sns),   0, 42, 1)
+        oled.oled.text("PNS:"   + str(pns),   0, 52, 1)
+        oled.oled.show()
+
+
+
+    def save_json_to_pico(self, filename, data):
+        with open(filename, "w") as file:
+            json.dump(data, file)
 
 class HR_sensor(Fifo):
     def __init__(self, size, adc_pin):
@@ -505,7 +638,7 @@ class OLED:
 
 
 class App:
-    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, history):
+    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, history, wifi_manager):
         self.delay = delay_time
         self.oled = oled
         self.data = data
@@ -518,6 +651,7 @@ class App:
         self.btn_val = False
         self.state = 0
         self.menu_item = oled.Menu(16, "Options", ">")
+        self.wifi_manager = wifi_manager
 
     def check_btn_press(self):
         if self.rot.push_fifo.has_data():
@@ -566,7 +700,7 @@ class App:
         elif self.option == 2:
             self.state = 6
         elif self.option == 3:
-            self.state = 6
+            self.state = 7
         elif self.option == 4:
             self.state = 7
         elif self.option == 5:
@@ -598,10 +732,48 @@ class App:
         self.data.read_off()
         self.data.hrv_mode(self.oled)
 
+    def kubios_state(self):
+        self.wifi_manager.wifi_ana()
+        self.wifi_manager.wifi_on()
 
-kubios = 0
+        mac = self.wifi_manager.get_pico_mac()
+        self.kubios.mqtt_client(mac)
+        self.kubios.connect_and_subscribe()
+
+        if self.data.count_sample < self.data.HRV_TIMER:
+            self.oled.state_3a_anim()
+        self.data.read()
+        while self.data.count_sample < self.data.HRV_TIMER:
+            print("SAMPLE", self.data.count_sample)
+            self.data.run(self.oled)
+            if self.check_btn_press():
+                self.data.read_off()
+                self.state = 2
+                self.btn_val = False
+                return
+        self.data.read_off()
+
+        ppi_list = self.data.ppi_list
+        if ppi_list:
+            self.kubios.send_request(mac, ppi_list)
+            response = self.kubios.wait_for_response()
+            if response:
+                print(response.get("data", {}).get("analysis", {}))
+                self.kubios.show_responce(self.oled)
+                while not self.rot.push_fifo.has_data():
+                    pass
+                self.rot.push_fifo.get()
+        self.state = 2 
+
+
+
+
+
 mqtt = 0
 history = 0
+
+wifi_manager = Wifi()
+kubios = Kubios()
 
 av = HR_sensor(250, 27)
 data = Data(av)
@@ -609,7 +781,7 @@ OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
 
 rot = Rotary_encoder(30, 10, 11, 12)
 oled = OLED(128, 64)
-app = App(0.05, oled, data, rot, kubios, mqtt, history)
+app = App(0.05, oled, data, rot, kubios, mqtt, history, wifi_manager)
 app.menu_item.add_options(*OPTIONS)
 app.oled.show_menu(app.menu_item, 0)
 
@@ -644,3 +816,5 @@ while True:
             app.state_off()
             app.state = 2
             app.btn_val = False
+    elif app.state == 7:
+        app.kubios_state()
