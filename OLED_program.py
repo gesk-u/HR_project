@@ -578,21 +578,23 @@ class OLED:
     def intro_anim(self, push_fifo=None):
         with open('intro.py', 'r') as f:
             exec(f.read())
-
+            
         for row_i, row in enumerate(LOGOSTART):
-            for col_i, c in enumerate(row):
-                self.oled.pixel(col_i + 51, row_i + 10, c)
-            self.oled.show()
-
-        for i in range(len(HEARTS) - 1):
-            if push_fifo and push_fifo.has_data():
-                push_fifo.get()
-                return True
-            for row_i, row in enumerate(HEARTS[i]):
+            if rot.push_fifo.has_data() != True:
                 for col_i, c in enumerate(row):
-                    self.oled.pixel(col_i, row_i, c)
-            self.oled.show()
-            time.sleep(INTRODELAY)
+                        self.oled.pixel(col_i + 51, row_i + 10, c)
+                self.oled.show()
+            else:
+                self.oled.fill(0)
+        
+        while push_fifo and (push_fifo.has_data() != True):
+            for i in range(len(HEARTS)):
+                if rot.push_fifo.has_data() != True:
+                    for row_i, row in enumerate(HEARTS[i]):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i, row_i, c)
+                    self.oled.show()
+                    time.sleep(INTRODELAY)
 
         return False
 
@@ -788,9 +790,8 @@ app.oled.show_menu(app.menu_item, 0)
 while True:
     if app.state == 0:
         app.state_off()
-        if app.check_btn_press():
-            app.btn_val = False
-            app.state = 1
+        app.btn_val = False
+        app.state = 1
     if app.state == 1:
         app.anim_state()
         if app.check_btn_press():
