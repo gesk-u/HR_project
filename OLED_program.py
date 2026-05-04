@@ -46,29 +46,36 @@ class Wifi:
     def wifi_ana(self):
         self.selected_ssid = "Tkach"
         self.password = "Gesku0911"
-
+    
     def default_wifi(self):
         self.selected_ssid = "KME751_Group_8"
         self.password = "TkachGrantLay"
 
     def wifi_on(self):
+        #self.wlan.active(False)
+        time.sleep_ms(100)
         self.wlan.active(True)
-
+        print("CONF", self.selected_ssid, self.password)
         # Connect only if not already connected.
         if not self.wlan.isconnected():
             print("Connecting to Wi-Fi...")
+            print("CONF", self.selected_ssid, self.password)
             self.wlan.connect(self.selected_ssid, self.password)
 
             # Keep waiting until the Pico successfully connects.
             while not self.wlan.isconnected():
-                time.sleep_ms(250)
+                self.wlan.connect(self.selected_ssid, self.password)
 
+                time.sleep_ms(250)
+        print("Connected to SSID:", self.wlan.config('ssid'))
         # Show the Pico's local IP address after connection.
         print("Wi-Fi connected:", self.wlan.ifconfig()[0])
         return self.wlan
 
+    def wifi_off(self):
+        self.wlan.active(False)
 class Kubios:
-    BROKER_IP = "KME751G008.asuscomm.com"
+    BROKER_IP = "194.110.232.94"
     BROKER_PORT = 1883
     REQUEST_TOPIC = b"kubios/request"
     RESPONSE_TOPIC = b"kubios/response"
@@ -182,13 +189,13 @@ class HR_sensor(Fifo):
 
 
 class Data():
-    HRV_TIMER = 1000
+    HRV_TIMER = 7500
 
     def __init__(self, hr_sensor, sampling_rate=250):
         self.av = hr_sensor
         self.sampling_rate = sampling_rate
         self.history = []
-        self.MAX_HISTORY = 270
+        self.MAX_HISTORY = 500
         self.sample = 0
         self.count_sample = 0
         self.max_sample = 0
@@ -199,7 +206,7 @@ class Data():
         self.MAX_BEATS = 20
         self.beat = False
         self.MIN_BEAT_INTERVAL = 400
-        self.MAX_BEAT_INTERVAL = 1200
+        self.MAX_BEAT_INTERVAL = 2000
         self.last_beat_time = 0
         self.avg_ppi_interval = 0
         self.bpm = None
@@ -212,8 +219,9 @@ class Data():
         self.SDNN = 0
         self.ppi_list = []
         self.smooth_buf = []
-        self.SMOOTH_WINDOW = 6
+        self.SMOOTH_WINDOW = 30
         self.last_beat_time = 0
+        self.y_buffer = []
 
     def read(self):
         self.tmr = Piotimer(mode=Piotimer.PERIODIC, freq=self.sampling_rate, callback=self.av.handler)
@@ -249,17 +257,23 @@ class Data():
         return hrv_history
 
     def run(self, oled):
-        for _ in range(50):
+        # Removed the heavy math from outside the loop
+        for _ in range(250):
             if self.av.has_data():
                 self.sample = self.av.get()
                 self.count_sample += 1
                 self.sample = self.smooth()
                 self.history.append(self.sample)
                 self.if_full(self.history, self.MAX_HISTORY)
-                self.max_sample = max(self.history)
-                self.min_sample = min(self.history)
-                self.threshold_on  = (self.min_sample + self.max_sample * 3) // 4
-                self.threshold_off = (self.min_sample + self.max_sample) // 2
+                
+
+                if self.count_sample % 50 == 0 and len(self.history) > 100:
+                    self.max_sample = max(self.history)
+                    self.min_sample = min(self.history)
+                    amplitude = self.max_sample - self.min_sample
+                    #self.threshold_on  = (self.min_sample + self.max_sample * 3) // 4
+                    self.threshold_on = self.min_sample + int(amplitude * 0.75)
+                    self.threshold_off = (self.min_sample + self.max_sample) // 2
 
                 if self.sample > self.threshold_on and not self.beat:
                     now = time.ticks_ms()
@@ -267,21 +281,28 @@ class Data():
                         self.last_beat_time = now
                     diff = time.ticks_diff(now, self.last_beat_time)
                     self.beat = True
-                    self.last_beat_time = now
-                    self.beats.append(now)
-                    self.if_full(self.beats, self.MAX_BEATS)
-                    if self.calculate_bpm():
-                        self.bpm = self.calculate_bpm()
-                    self.calculate_ppi()
-                    self.led.on()
+
+                    if self.last_beat_time == 0 or diff >= self.MIN_BEAT_INTERVAL:
+                        self.last_beat_time = now
+                        self.beats.append(now)
+                        self.if_full(self.beats, self.MAX_BEATS)
+                        
+                        self.calculate_ppi()
+                        self.calculate_bpm()
+
+                        self.led.on()
 
                 if self.sample < self.threshold_off and self.beat:
                     self.beat = False
                     self.led.off()
 
-                y = self.last_y
                 self.refresh()
-                oled.hr_animation(y, self.last_y, self.bpm, self.beat)
+                #self.y_buffer.append(self.last_y)
+                if self.count_sample % 10 == 0:
+                    self.y_buffer.append(self.last_y)
+                    oled.hr_animation(self.y_buffer, self.bpm, self.beat)
+                    self.y_buffer.clear()
+
 
     def median_filter(self, max_change_percent=0.2, window_size=5):
         if not self.ppi_list or len(self.ppi_list) < 2:
@@ -324,11 +345,11 @@ class Data():
         print("DIFF ppi", diff)
         if self.MIN_BEAT_INTERVAL < diff < self.MAX_BEAT_INTERVAL:
             self.ppi_list.append(diff)
-            self.if_full(self.ppi_list, 20)
+            self.if_full(self.ppi_list, 30)
             print("ppi_List", self.ppi_list)
             self.mean_ppi = sum(self.ppi_list) / len(self.ppi_list)
 
-    def clean_ppi_list(self, max_change_percent=0.2):
+    def clean_ppi_list(self, max_change_percent=0.3):
         if not self.ppi_list or len(self.ppi_list) < 2:
             return self.ppi_list
 
@@ -358,13 +379,18 @@ class Data():
                 print(f"Artifact detected and removed: {current_beat}ms")
 
         self.ppi_list = clean_list
+        return self.ppi_list
 
     def calculate_bpm(self):
-        if self.mean_ppi:
-            self.bpm = 60000 / self.mean_ppi
+        if self.mean_ppi > 0:
+            self.bpm = int(60000 / self.ppi_list[-1])
+            self.mean_bpm = int(60000 / self.mean_ppi)
+            '''
+            self.bpm = int(60000 / self.mean_ppi)
             self.bpm_list.append(self.bpm)
+            self.if_full(self.bpm_list, 30)
         if self.bpm_list:
-            self.mean_bpm = sum(self.bpm_list) // len(self.bpm_list)
+            self.mean_bpm = sum(self.bpm_list) // len(self.bpm_list)'''
 
     def calc_rmmds(self):
         ppi_diffs = []
@@ -383,22 +409,20 @@ class Data():
     def calc_sdnn(self):
         mean = sum(self.ppi_list) / len(self.ppi_list)
 
-        ppi_diffs = []
-        for i in range(len(self.ppi_list) - 1):
-            diff = self.ppi_list[i+1] - mean
-            ppi_diffs.append(diff)
-
         ppi_sqr = []
-        for d in ppi_diffs:
-            ppi_sqr.append(d**2)
+        for ppi in self.ppi_list:
+            diff = ppi - mean           
+            squared = diff ** 2         
+            ppi_sqr.append(squared)
 
-        if ppi_sqr:
-            sdnn = (sum(ppi_sqr) / len(ppi_sqr)) ** 0.5
-            self.SDNN = int(sdnn)
+        variance = sum(ppi_sqr) / (len(self.ppi_list) - 1)
+        self.SDNN = int(variance ** 0.5)
+
+
+   
 
     def refresh(self):
         if self.max_sample - self.min_sample > 0:
-            smoothed = self.smooth()
             self.last_y = 50 - int(32 * (self.sample - self.min_sample) / (self.max_sample - self.min_sample))
 
     def smooth(self):
@@ -409,7 +433,7 @@ class Data():
 
     def reset(self):
         self.history = []
-        self.MAX_HISTORY = 270
+        self.MAX_HISTORY = 500
         self.sample = 0
         self.count_sample = 0
         self.max_sample = 0
@@ -419,8 +443,8 @@ class Data():
         self.beats = []
         self.MAX_BEATS = 20
         self.beat = False
-        self.MIN_BEAT_INTERVAL = 500
-        self.MAX_BEAT_INTERVAL = 1200
+        self.MIN_BEAT_INTERVAL = 400
+        self.MAX_BEAT_INTERVAL = 2000
         self.last_beat_time = 0
         self.avg_ppi_interval = 0
         self.bpm = None
@@ -428,7 +452,8 @@ class Data():
         self.mean_bpm = 0
         self.last_y = 0
         self.mean_ppi = 0
-        self.RMMDS = []
+        self.RMMDS = 0
+        self.SDNN = 0
         self.ppi_list = []
         self.smooth_buf = []
         self.last_beat_time = 0
@@ -470,9 +495,11 @@ class OLED:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        self.i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=400000)
+        self.i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=1000000)
         self.oled = SSD1306_I2C(self.width, self.height, self.i2c)
         self.menu = []
+        self.prev_y = 0
+        self.x_pos = 0
 
     class Menu:
         def __init__(self, title_size, title="Menu", arrow="|"):
@@ -547,19 +574,43 @@ class OLED:
         x = max(0, x)
         self.oled.text(text, x, y, 1)
 
-    def hr_animation(self, hr_last_y, hr_y, bpm, beat):
-        self.oled.vline(0, 0, 64, 0)
-        self.oled.scroll(-1, 0)
-        self.oled.line(125, hr_last_y, 126, hr_y, 1)
-        self.oled.fill_rect(0, 0, 128, 10, 0)
+    def hr_animation(self, y_buffer, bpm, beat):
+        buffer_len = len(y_buffer)
+        if buffer_len == 0:
+            return
+
+        # 1. Scroll the existing graph to the left by the size of the buffer
+        self.oled.scroll(-buffer_len, 0)
+        
+        # 2. Clear the new space on the right side (only the graph area, Y: 11 to 54)
+        self.oled.fill_rect(128 - buffer_len, 11, buffer_len, 44, 0)
+
+        # 3. Draw the new line segments on the far right edge
+        start_x = 128 - buffer_len
+        for i, y in enumerate(y_buffer):
+            current_x = start_x + i
+            prev_y = self.prev_y if i == 0 else y_buffer[i - 1]
+            
+            # Connect the previous point to the current point
+            self.oled.line(current_x - 1, prev_y, current_x, y, 1)
+
+        # 4. Save the very last Y value for the next time this function is called
+        self.prev_y = y_buffer[-1]
+
+        # 5. Clear UI zones and redraw (this cleans up the UI text that got smeared by the scroll)
+        self.oled.fill_rect(0, 0, 128, 11, 0)
         self.oled.fill_rect(0, 55, 128, 10, 0)
         self.center_text("[X] STOP", 55)
+        
         if bpm is not None:
             self.oled.text("%d bpm" % bpm, 12, 0)
+            
         if beat:
             for row_i, row in enumerate(HEART):
                 for col_i, c in enumerate(row):
                     self.oled.pixel(col_i, row_i, c)
+                    
+        # 6. Push everything to the physical screen
         self.oled.show()
 
     def hrv_display(self, ppi, bpm, rmssd, sdnn):
@@ -740,6 +791,7 @@ class App:
 
         mac = self.wifi_manager.get_pico_mac()
         self.kubios.mqtt_client(mac)
+        print("CLIENT", self.kubios.client)
         self.kubios.connect_and_subscribe()
 
         if self.data.count_sample < self.data.HRV_TIMER:
@@ -755,7 +807,8 @@ class App:
                 return
         self.data.read_off()
 
-        ppi_list = self.data.ppi_list
+        ppi_list = self.data.clean_ppi_list()
+        print("PPILIST", ppi_list)
         if ppi_list:
             self.kubios.send_request(mac, ppi_list)
             response = self.kubios.wait_for_response()
@@ -766,6 +819,7 @@ class App:
                     pass
                 self.rot.push_fifo.get()
         self.state = 2 
+        
 
 
 
