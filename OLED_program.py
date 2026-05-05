@@ -98,23 +98,7 @@ class User_input:
         oled.oled.show()
         self.needs_update = False
 
-    def local_file(self):        
-        try:
-            with open('localhistory.json') as f:
-                self.localdata = json.load(f)
-                print("local history successfully loaded")
-        except:
-            with open('localhistory.json', 'w') as f:
-                pass
-                print("local history file missing, created it")
-                
-    def local_add(self, client, reading):
-        self.localdata.setdefault(client, []).append(reading) #setdefault creates an empty list if the user isn't in history, to prevent errors
-        
-    def local_load(self, client):
-        self.data = self.localdata[client]
-        return self.data
-
+    
 
 
 
