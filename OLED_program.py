@@ -31,6 +31,77 @@ POWER = [
     [0,0,1,1,1,0,0]
 ]
 
+class Client:
+    def __init__(self):
+        self.name = None
+
+
+    def update_user_name(self, oled):
+        oled.oled.fill(0)
+        oled.oled.text("NAME" + self) 
+
+class History:
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$ "
+    NAMES = "known_names.json"
+
+    def __init__(self):
+        self.selected_name = None
+        self.new_name = ""
+        self.char_index = 0
+        self.needs_update = False
+
+    def enter_name(self, rot, accept_btn, remove_btn, oled):
+        if rot.rot_fifo.has_data():
+            rot_turn = rot.rot_fifo.get()
+            if rot_turn == 1:
+                self.char_index = (self.char_index + 1) % len(self.alphabet)
+            else:
+                self.char_index = (self.char_index - 1) % len(self.alphabet)
+            self.needs_update = True
+
+
+        if rot.push_fifo.has_data():
+            rot.push_fifo.get()
+            self.new_name += self.alphabet[self.char_index]
+            self.needs_update = True
+
+        if accept_btn.fifo.has_data():
+            accept_btn.fifo.get()
+            print(f"Name accepted {self.new_name}")
+            self.selected_name = self.new_name
+        
+        if remove_btn.fifo.has_data():
+            remove_btn.fifo.get()
+            self.new_name = self.new_name[:-1] 
+            self.needs_update = True
+
+        if self.needs_update:
+            self.update_usrname_display(oled)
+
+    def update_usrname_display(self, oled):
+        oled.oled.fill(0)
+        oled.oled.text("NEW CLIENT ", 0, 0, 1)
+        oled.oled.hline(0, 10, 128, 1)
+        oled.oled.text("Name:", 0, 15, 1)
+        oled.oled.text(self.new_name + "_", 45, 15, 1)
+
+        prev_c = self.alphabet[(self.char_index - 1) % len(self.alphabet)]
+        curr_c = self.alphabet[self.char_index]
+        next_c = self.alphabet[(self.char_index + 1) % len(self.alphabet)]
+
+        oled.oled.text(prev_c, 30, 45, 1)
+        oled.center_text(f"> {curr_c} <", 42)
+        oled.oled.text(next_c, 90, 45, 1)
+
+        oled.oled.text("Push to add", 20, 56, 1)
+        oled.oled.show()
+        self.needs_update = False
+
+        
+
+
+
+
 class Wifi:
     def __init__(self):   
         self.selected_ssid = ""
@@ -690,12 +761,38 @@ class OLED:
         raise SystemExit
 
 
+
+class History:
+    def __init__(self, data):
+        self.data = data
+        self.timestamp_options = []
+        # variable to upload history filtered by client
+        self.selected_history_list = []
+
+    
+    def make_history_list(self):
+        for log in logs:
+            time = self.selected_history_list.get("Time", "N/A")
+            if time != "N/A":
+                self.timestamp_options.append(time)
+        return self.timestamp_options
+        
+    def show_history(self):
+        history_menu = self.Menu(16, "History", ">")
+        for log in logs:
+            time = data.get("Time", "N/A")
+            if time != "N/A":
+                timestamp_option.append(time)
+
+
 class App:
-    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, history, wifi_manager):
+    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, history, wifi_manager, accept_btn, remove_btn):
         self.delay = delay_time
         self.oled = oled
         self.data = data
         self.rot = rot
+        self.accept_btn = accept_btn
+        self.remove_btn = remove_btn
         self.kubios = kubios
         self.mqtt = mqtt
         self.history = history
@@ -821,12 +918,24 @@ class App:
         self.state = 2 
         
 
+class Btn:
+    def __init__(self, pin_nr):
+        self.pin = Pin(pin_nr, Pin.IN, Pin.PULL_UP)
+        self.fifo = Fifo(10)
+        self.last_time = 0
+        self.pin.irq(trigger=Pin.IRQ_FALLING, handler=self._handler)
 
+    def _handler(self, pin):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.last_time) > 250:
+            self.fifo.put(3)
+            self.last_time = now     
 
-
+accept_btn = Btn(7)
+remove_btn = Btn(9) 
 
 mqtt = 0
-history = 0
+history = History()
 
 wifi_manager = Wifi()
 kubios = Kubios()
@@ -837,19 +946,22 @@ OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
 
 rot = Rotary_encoder(30, 10, 11, 12)
 oled = OLED(128, 64)
-app = App(0.05, oled, data, rot, kubios, mqtt, history, wifi_manager)
+app = App(0.05, oled, data, rot, kubios, mqtt, history, wifi_manager, accept_btn, remove_btn)
 app.menu_item.add_options(*OPTIONS)
 app.oled.show_menu(app.menu_item, 0)
-
+#app.state = 404
 while True:
+    #if app.state == 404:
+        #print("here")
+        #app.history.enter_name(app.rot, app.accept_btn, app.remove_btn, app.oled)
     if app.state == 0:
         app.state_off()
         app.btn_val = False
         app.state = 1
     if app.state == 1:
-        app.anim_state()
-        if app.check_btn_press():
-            app.btn_val = False
+        #app.anim_state()
+        #if app.check_btn_press():
+            #app.btn_val = False
             app.state = 2
     elif app.state == 2:
         while True:
