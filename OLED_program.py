@@ -786,7 +786,7 @@ class History:
             self.history_menu.add_options(*self.timestamp_options)
             while True:
                 while rot.rot_fifo.has_data():
-                    rot_turn = self.rot.rot_fifo.get()
+                    rot_turn = rot.rot_fifo.get()
                     self.history_menu.update_arrow(rot_turn)
 
                 oled.show_menu(self.history_menu, self.option)
@@ -949,21 +949,21 @@ class Btn:
 
 
 test_timestamps = [
-    "2023/01/15 08:30:00",  # Standard morning time
-    "2023/02/28 14:45:12",  # End of standard February
-    "2023/04/01 00:00:01",  # Just past midnight
-    "2023/07/04 12:00:00",  # Exactly noon
-    "2023/10/31 23:59:59",  # Last second of the day
-    "2024/02/29 10:15:30",  # Leap year day
-    "2022/12/25 07:05:05",  # Single-digit minutes/seconds
-    "2021/09/11 09:41:00",  # Zeroes in seconds
-    "2025/05/05 16:20:45",  # Afternoon time
-    "2020/01/01 01:01:01",  # All single digits (1s)
-    "2019/06/15 18:30:22",  # Standard evening time
-    "2018/08/08 08:08:08",  # Repeated digits
-    "2026/11/11 11:11:11",  # Repeated double digits
-    "2026/05/05 19:10:44",  # Current time example
-    "1999/12/31 23:59:59"   # End of century edge case
+    "23-01-15 08:30",  # Standard morning time
+    "23-02-28 14:45",  # End of standard February
+    "23-04-01 00:00",  # Just past midnight
+    "23-07-04 12:00",  # Exactly noon
+    "23-10-31 23:59",  # Last second of the day
+    "24-02-29 10:15",  # Leap year day
+    "22-12-25 07:05",  # Single-digit minutes/seconds
+    "21-09-11 09:41",  # Zeroes in seconds
+    "25-05-05 16:20",  # Afternoon time
+    "20-01-01 01:01",  # All single digits (1s)
+    "19-06-15 18:30",  # Standard evening time
+    "18-08-08 08:08",  # Repeated digits
+    "26-11-11 11:11",  # Repeated double digits
+    "26-05-05 19:10",  # Current time example
+    "99-12-31 23:59"   # End of century edge case
 ]
 
 accept_btn = Btn(7)
