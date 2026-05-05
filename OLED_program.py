@@ -763,26 +763,42 @@ class OLED:
 
 
 class History:
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, oled):
         self.timestamp_options = []
         # variable to upload history filtered by client
         self.selected_history_list = []
+        self.history_menu = oled.Menu(16, "History", ">")
+        self.option = 0
 
+    def history_data(self, data):
+        self.selected_history_list = data
     
-    def make_history_list(self):
-        for log in logs:
-            time = self.selected_history_list.get("Time", "N/A")
+    def make_options(self):
+        for log in self.selected_history_list:
+            #time = log.get("Time", "N/A")
+            time = log
             if time != "N/A":
                 self.timestamp_options.append(time)
         return self.timestamp_options
         
-    def show_history(self):
-        history_menu = self.Menu(16, "History", ">")
-        for log in logs:
-            time = data.get("Time", "N/A")
-            if time != "N/A":
-                timestamp_option.append(time)
+    def show_history(self, rot, oled):
+        if self.timestamp_options:
+            self.history_menu.add_options(*self.timestamp_options)
+            while True:
+                while rot.rot_fifo.has_data():
+                    rot_turn = self.rot.rot_fifo.get()
+                    self.history_menu.update_arrow(rot_turn)
+
+                oled.show_menu(self.history_menu, self.option)
+
+                if rot.push_fifo.has_data():
+                    self.option = self.history_menu.selected_index
+                    print("HISTORY INDEX", self.history_menu.selected_index)
+                    #TODO
+                    pass
+
+                
+
 
 
 class App:
@@ -931,11 +947,30 @@ class Btn:
             self.fifo.put(3)
             self.last_time = now     
 
+
+test_timestamps = [
+    "2023/01/15 08:30:00",  # Standard morning time
+    "2023/02/28 14:45:12",  # End of standard February
+    "2023/04/01 00:00:01",  # Just past midnight
+    "2023/07/04 12:00:00",  # Exactly noon
+    "2023/10/31 23:59:59",  # Last second of the day
+    "2024/02/29 10:15:30",  # Leap year day
+    "2022/12/25 07:05:05",  # Single-digit minutes/seconds
+    "2021/09/11 09:41:00",  # Zeroes in seconds
+    "2025/05/05 16:20:45",  # Afternoon time
+    "2020/01/01 01:01:01",  # All single digits (1s)
+    "2019/06/15 18:30:22",  # Standard evening time
+    "2018/08/08 08:08:08",  # Repeated digits
+    "2026/11/11 11:11:11",  # Repeated double digits
+    "2026/05/05 19:10:44",  # Current time example
+    "1999/12/31 23:59:59"   # End of century edge case
+]
+
 accept_btn = Btn(7)
 remove_btn = Btn(9) 
 
 mqtt = 0
-history = History()
+
 
 wifi_manager = Wifi()
 kubios = Kubios()
@@ -946,11 +981,21 @@ OPTIONS = ("Measure HR", "Basic HRV", "Coffee", "Kubios", "History", "Shutdown")
 
 rot = Rotary_encoder(30, 10, 11, 12)
 oled = OLED(128, 64)
+
+history = History(oled)
 app = App(0.05, oled, data, rot, kubios, mqtt, history, wifi_manager, accept_btn, remove_btn)
 app.menu_item.add_options(*OPTIONS)
 app.oled.show_menu(app.menu_item, 0)
+# USER INPUT
 #app.state = 404
+# HISTORY
+app.state = 67
 while True:
+    if app.state == 67:
+        app.history.history_data(test_timestamps)
+        app.history.make_options()
+        app.history.show_history(app.rot, app.oled)
+        app.history
     #if app.state == 404:
         #print("here")
         #app.history.enter_name(app.rot, app.accept_btn, app.remove_btn, app.oled)
