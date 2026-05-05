@@ -40,7 +40,7 @@ class Client:
         oled.oled.fill(0)
         oled.oled.text("NAME" + self) 
 
-class History:
+class User_input:
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$ "
     NAMES = "known_names.json"
 
@@ -785,6 +785,7 @@ class History:
         self.selected_history_list = []
         self.history_menu = oled.Menu(16, "History", ">")
         self.option = 0
+        self.localdata = []
 
     def history_data(self, data):
         self.selected_history_list = data
@@ -812,6 +813,22 @@ class History:
                     print("HISTORY INDEX", self.history_menu.selected_index)
                     #TODO
                     pass
+    def local_file(self):        
+        try:
+            with open('localhistory.json') as f:
+                self.localdata = json.load(f)
+                print("local history successfully loaded")
+        except:
+            with open('localhistory.json', 'w') as f:
+                pass
+                print("local history file missing, created it")
+                
+    def local_add(self, client, reading):
+        self.localdata.setdefault(client, []).append(reading) #setdefault creates an empty list if the user isn't in history, to prevent errors
+        
+    def local_load(self, client):
+        self.data = self.localdata[client]
+        return self.data
 
                 
 
@@ -1005,7 +1022,7 @@ app.oled.show_menu(app.menu_item, 0)
 # USER INPUT
 #app.state = 404
 # HISTORY
-app.state = 67
+#app.state = 67
 while True:
     if app.state == 67:
         app.history.history_data(test_timestamps)
@@ -1039,7 +1056,12 @@ while True:
     elif app.state == 5:
         app.state_4()
         if app.check_btn_press():
+            client = "Ana"
             history = app.data.hrv_history()
+            app.history.local_file()
+            app.history.local_add(client, history)
+            app.history.local_load(client)
+
             print("HISTORY", history)
             app.state_off()
             app.state = 2
