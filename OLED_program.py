@@ -212,7 +212,7 @@ class Kubios:
             oled.center_text("No response", 28)
             oled.oled.show()
             return
-
+        print("RESPONCE", self.latest_response)
         result = self.latest_response.get("data", {}).get("analysis", {})
         bpm   = result.get("mean_hr_bpm", "N/A")
         bpm = str(round(float(bpm)))
@@ -304,7 +304,7 @@ class Data():
 
     def get_data(self):
         t = time.localtime()
-        timestamp = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(t[0], t[1], t[2], t[3], t[4], t[5])
+        timestamp = "{:02d}-{:02d}-{:02d} {:02d}:{:02d}".format(t[0] % 100, t[1], t[2], t[3], t[4])
         return {
             "Time": timestamp,
             "Mean PPI": self.mean_ppi,
@@ -560,6 +560,8 @@ class Rotary_encoder(Fifo):
             print("done")
             self.last_push_time = now
 
+        
+
 
 class OLED:
 
@@ -763,21 +765,24 @@ class OLED:
 
 
 class History:
+    FILENAME = 'localhistory.json'
     def __init__(self, oled):
         self.timestamp_options = []
         # variable to upload history filtered by client
         self.selected_history_list = []
         self.history_menu = oled.Menu(16, "History", ">")
         self.option = 0
-        self.localdata = []
+        self.localdata = {}
+        self.local_file()
 
     def history_data(self, data):
         self.selected_history_list = data
     
     def make_options(self):
+        self.timestamp_options = ["Exit"]
         for log in self.selected_history_list:
-            #time = log.get("Time", "N/A")
-            time = log
+            time = log.get("Time", "N/A")
+            #time = log
             if time != "N/A":
                 self.timestamp_options.append(time)
         return self.timestamp_options
@@ -793,26 +798,49 @@ class History:
                 oled.show_menu(self.history_menu, self.option)
 
                 if rot.push_fifo.has_data():
+                    button_val = rot.push_fifo.get()
                     self.option = self.history_menu.selected_index
                     print("HISTORY INDEX", self.history_menu.selected_index)
-                    #TODO
-                    pass
+                    if self.option == 0:
+                        return 2
+
+                    selected_log = self.selected_history_list[self.option - 1]
+                    print("Log Details:", selected_log)
+                    ppi = selected_log.get('Mean PPI')
+                    bpm = selected_log.get('Mean BPM')
+                    rmssd = selected_log.get('RMMDS')
+                    sdnn = selected_log.get('SDNN')
+                    while True:
+                        oled.hrv_display(ppi, bpm, rmssd, sdnn)
+                        if rot.push_fifo.has_data():
+                            rot.push_fifo.get()
+                            return 8
+                    
+
+
     def local_file(self):        
         try:
-            with open('localhistory.json') as f:
+            with open(self.FILENAME, 'r') as f:
                 self.localdata = json.load(f)
                 print("local history successfully loaded")
-        except:
-            with open('localhistory.json', 'w') as f:
-                pass
-                print("local history file missing, created it")
+        except(OSError, ValueError):
+            self.localdata = {}
+            self.save_to_disk()
+            print("Local history initialized")
+           
+    def save_to_disk(self):
+        with open(self.FILENAME, 'w') as f:
+            json.dump(self.localdata, f)
                 
     def local_add(self, client, reading):
-        self.localdata.setdefault(client, []).append(reading) #setdefault creates an empty list if the user isn't in history, to prevent errors
-        
+        if client not in self.localdata:
+            self.localdata[client] = []
+        self.localdata[client].append(reading)
+        self.save_to_disk()
+
     def local_load(self, client):
-        self.data = self.localdata[client]
-        return self.data
+        self.selected_history_list = self.localdata[client]
+        return self.selected_history_list
 
                 
 
@@ -885,7 +913,7 @@ class App:
         elif self.option == 3:
             self.state = 7
         elif self.option == 4:
-            self.state = 7
+            self.state = 8
         elif self.option == 5:
             self.state = 8
 
@@ -902,10 +930,10 @@ class App:
 
     def state_4(self):
         if self.data.count_sample < self.data.HRV_TIMER:
+            print("SAMPLE", self.data.count_sample)
             self.oled.state_3a_anim()
         self.data.read()
         while self.data.count_sample < self.data.HRV_TIMER:
-            print("SAMPLE", self.data.count_sample)
             self.data.run(self.oled)
             if self.check_btn_press():
                 self.data.read_off()
@@ -928,8 +956,8 @@ class App:
             self.oled.state_3a_anim()
         self.data.read()
         while self.data.count_sample < self.data.HRV_TIMER:
-            print("SAMPLE", self.data.count_sample)
             self.data.run(self.oled)
+            print("SAMPLE", self.data.count_sample)
             if self.check_btn_press():
                 self.data.read_off()
                 self.state = 2
@@ -943,7 +971,7 @@ class App:
             self.kubios.send_request(mac, ppi_list)
             response = self.kubios.wait_for_response()
             if response:
-                print(response.get("data", {}).get("analysis", {}))
+                #print(response.get("data", {}).get("analysis", {}))
                 self.kubios.show_responce(self.oled)
                 while not self.rot.push_fifo.has_data():
                     pass
@@ -987,7 +1015,7 @@ accept_btn = Btn(7)
 remove_btn = Btn(9) 
 
 mqtt = 0
-
+client = User_input()
 
 wifi_manager = Wifi()
 kubios = Kubios()
@@ -1007,23 +1035,25 @@ app.oled.show_menu(app.menu_item, 0)
 #app.state = 404
 # HISTORY
 #app.state = 67
+app.state=0
+client = "Ana"
 while True:
     if app.state == 67:
         app.history.history_data(test_timestamps)
         app.history.make_options()
         app.history.show_history(app.rot, app.oled)
         app.history
-    #if app.state == 404:
+    if app.state == 404:
         #print("here")
-        #app.history.enter_name(app.rot, app.accept_btn, app.remove_btn, app.oled)
+        client.enter_name(app.rot, app.accept_btn, app.remove_btn, app.oled)
     if app.state == 0:
         app.state_off()
         app.btn_val = False
         app.state = 1
     if app.state == 1:
-        #app.anim_state()
-        #if app.check_btn_press():
-            #app.btn_val = False
+        app.anim_state()
+        if app.check_btn_press():
+            app.btn_val = False
             app.state = 2
     elif app.state == 2:
         while True:
@@ -1040,15 +1070,22 @@ while True:
     elif app.state == 5:
         app.state_4()
         if app.check_btn_press():
-            client = "Ana"
             history = app.data.hrv_history()
+            print("HISTORY", history)
             app.history.local_file()
             app.history.local_add(client, history)
             app.history.local_load(client)
 
-            print("HISTORY", history)
+    
             app.state_off()
             app.state = 2
             app.btn_val = False
     elif app.state == 7:
         app.kubios_state()
+
+    elif app.state == 8:
+        app.history.local_file()
+        app.history.local_load(client)
+        app.history.make_options()
+        app.state = app.history.show_history(app.rot, app.oled)
+        
