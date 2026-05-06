@@ -863,6 +863,7 @@ class App:
         self.state = 0
         self.menu_item = oled.Menu(16, "Options", ">")
         self.wifi_manager = wifi_manager
+        self.coffe_ready = 0
 
     def check_btn_press(self):
         if self.rot.push_fifo.has_data():
@@ -915,7 +916,7 @@ class App:
         elif self.option == 4:
             self.state = 8
         elif self.option == 5:
-            self.state = 8
+            self.state = 9
 
     def state_3a(self):
         self.oled.state_3a_anim()
@@ -978,6 +979,20 @@ class App:
                 self.rot.push_fifo.get()
         self.state = 2 
         
+    def coffe_state(self):
+        self.history.make_options()
+        if len(self.history.timestamp_options) > 1:
+            selected_log = self.selected_history_list[0]
+            ppi = selected_log.get('Mean PPI')
+            bpm = selected_log.get('Mean BPM')
+            rmssd = selected_log.get('RMMDS')
+            sdnn = selected_log.get('SDNN')
+            coffee_idx = round(rmssd / sdnn * 10)
+            if coffee_idx > 5:
+                return True
+            else:
+                return False
+
 
 class Btn:
     def __init__(self, pin_nr):
@@ -1080,12 +1095,22 @@ while True:
             app.state_off()
             app.state = 2
             app.btn_val = False
+    
+    elif app.state == 6:
+        pass
+    
     elif app.state == 7:
         app.kubios_state()
 
     elif app.state == 8:
+        #TODO put it into a state
         app.history.local_file()
         app.history.local_load(client)
         app.history.make_options()
         app.state = app.history.show_history(app.rot, app.oled)
         
+    elif app.state == 9:
+        app.state_off
+        if app.check_btn_press():
+            app.btn_val = False
+            app.state = 2
