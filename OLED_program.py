@@ -1272,7 +1272,7 @@ class App:
     function of the device.
     '''
     
-    def __init__(self, delay_time, oled, data, rot, kubios, mqtt, 
+    def __init__(self, client, delay_time, oled, data, rot, kubios, mqtt, 
                 history, wifi_manager, accept_btn, remove_btn):
         self.delay = delay_time
         self.oled = oled
@@ -1290,6 +1290,7 @@ class App:
         self.menu_item = oled.Menu(16, "Options", ">")
         self.wifi_manager = wifi_manager
         self.coffe_ready = 0
+        self.client = client
 
 
     # ------------------------------------------------------------------
@@ -1414,21 +1415,23 @@ class App:
         self.data.read_off()
         self.data.hrv_mode(self.oled)   # Display RMSSD / SDNN / BPM / PPI
 
-    def coffe_state(self):
+    def coffee_state(self):
         '''
         State 6 handler.
         Coffee Readiness Index.
  
         '''
-
+        self.history.local_load(self.client)
         self.history.make_options()
+
         if len(self.history.timestamp_options) > 1:
-            selected_log = self.selected_history_list[0]
+            selected_log = self.history.selected_history_list[0]
             ppi = selected_log.get('Mean PPI')
             bpm = selected_log.get('Mean BPM')
             rmssd = selected_log.get('RMMDS')
             sdnn = selected_log.get('SDNN')
             coffee_idx = round(rmssd / sdnn * 10)
+
             if coffee_idx > 5:
                 return True
             else:
@@ -1522,7 +1525,8 @@ rot = Rotary_encoder(30, 10, 11, 12)
 oled = OLED(128, 64)
 
 history = History(oled)
-app = App(0.05, oled, data, rot, kubios, mqtt, history, wifi_manager, accept_btn, remove_btn)
+client = "Ana"
+app = App(client, 0.05, oled, data, rot, kubios, mqtt, history, wifi_manager, accept_btn, remove_btn)
 app.menu_item.add_options(*OPTIONS)
 app.oled.show_menu(app.menu_item)
 # USER INPUT
@@ -1534,9 +1538,9 @@ app.oled.show_menu(app.menu_item)
 # ---------------------------------------------------------------------------
 # Main state-machine loop
 # ---------------------------------------------------------------------------
-
-app.state = 0
 client = "Ana"
+app.state = 0
+
 
 while True:
 
@@ -1591,8 +1595,8 @@ while True:
             history = app.data.hrv_history()
             print("HISTORY", history)
             app.history.local_file()
-            app.history.local_add(client, history)
-            app.history.local_load(client)
+            app.history.local_add(self.client, history)
+            app.history.local_load(self.client)
 
     
             app.state_off()
@@ -1601,7 +1605,8 @@ while True:
     
     # State 6: coffee readiness (not yet implemented)
     elif app.state == 6:
-        if app.coffe_state() == True:
+        app.coffee_state()
+        if app.coffee_state() == True:
             oled.coffeegood()
         else:
             oled.coffeebad()
@@ -1616,8 +1621,8 @@ while True:
     # State 8: local history browser
     elif app.state == 8:
         #TODO put it into a state
-        app.history.local_file()
-        app.history.local_load(client)
+        #app.history.local_file()
+        app.history.local_load(self.client)
         app.history.make_options()
         app.state = app.history.show_history(app.rot, app.oled)
     
