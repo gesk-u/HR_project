@@ -1081,6 +1081,33 @@ class OLED:
         self.oled.show()
         time.sleep(0.2)
         self.oled.fill(0)
+        
+        
+    def coffeegood(self):
+        self.oled.text("Have a cup", 40, 17)
+        while rot.push_fifo.has_data() != True:
+            for i in range(len(HEARTS)):
+                if rot.push_fifo.has_data() != True:
+                    for row_i, row in enumerate(HEARTS[i]):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i, row_i, c)
+                    self.oled.show()
+                    time.sleep(INTRODELAY)
+                    
+    def coffeebad(self):
+        with open('cross.py', 'r') as f:
+            exec(f.read())
+        
+        self.oled.text("Ease off", 45, 21)
+        self.oled.text("for a bit", 45, 30)
+        while rot.push_fifo.has_data() != True:
+            for i in range(len(CROSS)):
+                if rot.push_fifo.has_data() != True:
+                    for row_i, row in enumerate(CROSS):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i + 2, row_i + 15, c)
+                    self.oled.show()
+                    time.sleep(INTRODELAY)
 
 
 # ---------------------------------------------------------------------------
