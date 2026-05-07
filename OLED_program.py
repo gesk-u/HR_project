@@ -761,6 +761,32 @@ class OLED:
         self.oled.fill(0)
         self.oled.show()
         raise SystemExit
+        
+    def coffeegood(self):
+        self.oled.text("Have a cup", 40, 17)
+        while rot.push_fifo.has_data() != True:
+            for i in range(len(HEARTS)):
+                if rot.push_fifo.has_data() != True:
+                    for row_i, row in enumerate(HEARTS[i]):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i, row_i, c)
+                    self.oled.show()
+                    time.sleep(INTRODELAY)
+                    
+    def coffeebad(self):
+        with open('cross.py', 'r') as f:
+            exec(f.read())
+        
+        self.oled.text("Ease off", 45, 21)
+        self.oled.text("for a bit", 45, 30)
+        while rot.push_fifo.has_data() != True:
+            for i in range(len(CROSS)):
+                if rot.push_fifo.has_data() != True:
+                    for row_i, row in enumerate(CROSS):
+                        for col_i, c in enumerate(row):
+                            self.oled.pixel(col_i + 2, row_i + 15, c)
+                    self.oled.show()
+                    time.sleep(INTRODELAY)
 
 
 
@@ -1097,7 +1123,13 @@ while True:
             app.btn_val = False
     
     elif app.state == 6:
-        pass
+        if app.coffe_state() == True:
+            oled.coffeegood()
+        else:
+            oled.coffeebad()
+        if app.check_btn_press():
+            app.btn_val = False
+            app.state = 2
     
     elif app.state == 7:
         app.kubios_state()
