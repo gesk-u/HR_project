@@ -1442,8 +1442,8 @@ class App:
                 self.btn_val = False
                 return
         self.data.read_off()
-        ppi_list = self.data.ppi_list
-        #ppi_list = self.data.median_filter()
+        #ppi_list = self.data.ppi_list
+        ppi_list = self.data.median_filter()
         print("PPILIST", ppi_list)
         if ppi_list:
             self.kubios.send_request(mac, ppi_list)
