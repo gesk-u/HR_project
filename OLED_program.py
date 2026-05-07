@@ -8,6 +8,7 @@ from umqtt.simple import MQTTClient
 import network
 import ubinascii
 import json
+import gc
 
 HEART = [
     [0,0,1,0,1,0,0,0,0],
@@ -50,6 +51,7 @@ class User_input:
         self.char_index = 0
         self.needs_update = False
         self.localdata = []
+
 
     def enter_name(self, rot, accept_btn, remove_btn, oled):
         if rot.rot_fifo.has_data():
@@ -147,12 +149,152 @@ class Wifi:
         self.wlan.active(False)
 
 class MQTT:
-    def __init__():
+    BROKER_IP = "194.110.232.94"
+    BROKER_PORT = 1883
+    REQUEST_DEVISE = b"database/devices/add"
+    REQUEST_ADD_PATIENT = b"database/patients/add"
+    REQUEST_LIST_PATIENT = b"database/patients/list"
+    REQUEST_ADD_RECORDS = b"database/records/add"
+
+
+    RESPONSE_TOPIC = b"database/response"
+    TIMEOUT_MS = 15000
+    
+    def __init__(self):
         self.patient = ""
         self.patient_id = 0
-        self.mac = 0
-    
+        self.latest_response = None
+        self.mqtt_client = None
 
+    def setup_client(self, mac):
+        # Initialize the MQTT client with device MAC address as a client ID
+        self.mqtt_client = MQTTClient(
+            client_id=(mac + "_ext").encode(),
+            server=self.BROKER_IP, 
+            port=self.BROKER_PORT)
+        self.mqtt_client.set_callback(self._mqtt_callback)
+        return self.mqtt_client
+
+    '''def _get_pico_mac(self):
+        mac_bytes = self.wlan.config("mac")
+        self.mac = ubinascii.hexlify(mac_bytes).decode().upper()
+        return self.mac'''
+
+    def _safe_publish(self, topic, payload):
+        '''Helper method to handle disconnected sockets (EBADF)'''
+        if not self.mqtt_client:
+            return False
+            
+        try:
+            self.mqtt_client.publish(topic, json.dumps(payload))
+            return True
+        except OSError as e:
+            print(f"Connection lost during publish (Error {e}). Reconnecting...")
+            try:
+                # If the socket is dead, reconnect and try exactly one more time
+                self.connect_and_subscribe()
+                self.mqtt_client.publish(topic, json.dumps(payload))
+                return True
+            except OSError:
+                print("Failed to publish even after reconnecting.")
+                return False
+
+    def _mqtt_callback(self, topic, msg):
+        # Ignore messages from topics other than the response topic
+        if topic != self.RESPONSE_TOPIC:
+            return
+        try:
+            # Parse the incoming JSON message and store it
+            self.latest_response = json.loads(msg)
+        except ValueError:      
+            self.latest_response = None
+
+    def connect_and_subscribe(self):
+        gc.collect()
+        # Connect to the MQTT broker and subscribe to the response topic
+        self.mqtt_client.connect()
+        self.mqtt_client.subscribe(self.RESPONSE_TOPIC)
+    
+    def add_device(self, mac):
+        payload = {
+            "mac": mac,
+            "device_name": "Group 8"
+        }
+
+        if self.mqtt_client:
+            self._safe_publish(self.REQUEST_DEVISE, payload)
+
+    def add_patient(self, client_name, mac):
+        payload = {
+            "mac": mac,
+            "patient_name": client_name
+        }
+
+        if self.mqtt_client:
+            self._safe_publish(self.REQUEST_ADD_PATIENT, payload)
+        
+    
+    def list_patients(self, mac):
+        payload = {
+            "mac": mac
+        }
+
+        if self.mqtt_client:
+            self._safe_publish(self.REQUEST_LIST_PATIENT, payload)
+
+    def add_records(self, client_id, payload, mac):
+        self.latest_response = None
+
+        timestamp = payload.get("Time", "N/A")
+        hr = payload.get("Mean BPM", "N/A")
+        ppi = payload.get("Mean PPI", "N/A")
+        rmssd = payload.get("RMMDS", "N/A")
+        sdnn = payload.get("SDNN", "N/A")
+        sns = payload.get("SNS", "N/A")
+        pns = payload.get("PNS", "N/A")
+
+        f_payload = {
+            "mac": mac,
+            "timestamp": timestamp,
+            "mean_hr": hr,
+            "mean_ppi": ppi,
+            "rmssd": rmssd,
+            "sdnn": sdnn,
+            "sns": sns,
+            "pns": pns,
+            "patient_id": client_id
+        }
+
+        if self.mqtt_client:
+            self._safe_publish(self.REQUEST_ADD_RECORDS, f_payload)
+
+
+    def wait_for_response(self):
+        '''
+        Wait for incoming messages until a response arrives or the timeout is over
+        Side-effects:
+          - Saves the response to OUTPUT_FILE.
+          - Disconnects the MQTT client when done.
+
+        Returns:
+            dict | None: The parsed Kubios response, or None on timeout.
+        '''
+        start = time.ticks_ms()
+
+        while time.ticks_diff(time.ticks_ms(), start) < self.TIMEOUT_MS:
+            self.mqtt_client.check_msg()
+            
+            if self.latest_response:
+                print("Response received:")
+                print("MQQT database response: ", self.latest_response)
+                break
+            time.sleep_ms(200)  # Short delay to avoid busy-waiting
+
+        return self.latest_response
+
+    def disconnect(self):
+        self.mqtt_client.disconnect()
+        print("Client disconnected")
 
 # ---------------------------------------------------------------------------
 # Kubios — MQTT-based cloud HRV analysis
@@ -182,6 +324,13 @@ class Kubios:
     def __init__(self):
         self.client = None          # MQTTClient instance
         self.latest_response = None # Stores the most recent parsed JSON response
+        self.bpm = 0
+        self.ppi = 0
+        self.rmssd = 0
+        self.sdnn = 0
+        self.sns =  0
+        self.pns = 0
+        self.time = 0
         
     def mqtt_client(self, mac):
         # Initialize the MQTT client with device MAC address as a client ID
@@ -202,6 +351,7 @@ class Kubios:
             self.latest_response = None
 
     def connect_and_subscribe(self):
+        gc.collect()
         # Connect to the MQTT broker and subscribe to the response topic
         self.client.connect()
         self.client.subscribe(self.RESPONSE_TOPIC)
@@ -251,44 +401,82 @@ class Kubios:
                 "analysis": {"type": "readiness"}
             }
 
+    def extract_result(self):
+        '''
+        Extract and round HRV metrics from the nested response structure
+        '''
+        if not self.latest_response:
+            return 0
+        else:
+            print("RESULT", self.latest_response)
+            result = self.latest_response.get("data", {}).get("analysis", {})
+            bpm   = result.get("mean_hr_bpm", "N/A")
+            self.bpm = str(round(float(bpm)))
+            ppi   = result.get("mean_rr_ms",  "N/A")
+            self.ppi = str(round(float(ppi)))
+            rmssd = result.get("rmssd_ms",    "N/A")
+            self.rmssd = str(round(float(rmssd)))
+            sdnn  = result.get("sdnn_ms",     "N/A")
+            self.sdnn = str(round(float(sdnn)))
+            sns   = result.get("sns_index",   "N/A")
+            self.sns = str(round(float(sns), 3))
+            pns   = result.get("pns_index",   "N/A")
+            self.pns = str(round(float(pns), 3))
+            timestamp_str = result.get("create_timestamp",   "N/A")
+
+            # Create a Unix Timestamp
+            if timestamp_str != "N/A":
+                date_part, time_part = timestamp_str.split("T")
+                year, mm, dd = [int(x) for x in date_part.split("-")]
+                time_clean = time_part.split("+")[0].split("-")[0].split(".")[0]
+                hh, mins, secs = [int(x) for x in time_clean.split(":")]
+                self.time = time.mktime((year, mm, dd, hh, mins, secs, 0, 0))
+
+            #self.time = self.format_finnish_time(time)
+            print("TIME", self.time)
+            return 1
+
     def show_responce(self, oled):
         '''
         Display Kubios HRV analysis results on the OLED screen
         Metrics shown: BPM, PPI, RMSSD, SDNN, SNS index, PNS index.
         '''
-        if not self.latest_response:
+        if not self.extract_result():
             oled.oled.fill(0)
             oled.center_text("No response", 28)
             oled.oled.show()
             return
 
-        print("RESPONCE", self.latest_response)
-
-        # Extract and round HRV metrics from the nested response structure
-        result = self.latest_response.get("data", {}).get("analysis", {})
-        bpm   = result.get("mean_hr_bpm", "N/A")
-        bpm = str(round(float(bpm)))
-        ppi   = result.get("mean_rr_ms",  "N/A")
-        ppi = str(round(float(ppi)))
-        rmssd = result.get("rmssd_ms",    "N/A")
-        rmssd = str(round(float(rmssd)))
-        sdnn  = result.get("sdnn_ms",     "N/A")
-        sdnn = str(round(float(sdnn)))
-        sns   = result.get("sns_index",   "N/A")
-        sns = str(round(float(sns), 3))
-        pns   = result.get("pns_index",   "N/A")
-        pns = str(round(float(pns), 3))
+        self.extract_result()
 
         # Render all metrics on the OLED display (128x64, 8px per row)
         oled.oled.fill(0)
-        oled.oled.text("HR:"    + str(bpm),   0,  0, 1)
-        oled.oled.text("PPI:"   + str(ppi),   0, 10, 1)
-        oled.oled.text("RMSSD:" + str(rmssd), 0, 20, 1)
-        oled.oled.text("SDNN:"  + str(sdnn),  0, 30, 1)
-        oled.oled.text("SNS:"   + str(sns),   0, 42, 1)
-        oled.oled.text("PNS:"   + str(pns),   0, 52, 1)
+        oled.oled.text("HR:"    + str(self.bpm),   0,  0, 1)
+        oled.oled.text("PPI:"   + str(self.ppi),   0, 10, 1)
+        oled.oled.text("RMSSD:" + str(self.rmssd), 0, 20, 1)
+        oled.oled.text("SDNN:"  + str(self.sdnn),  0, 30, 1)
+        oled.oled.text("SNS:"   + str(self.sns),   0, 42, 1)
+        oled.oled.text("PNS:"   + str(self.pns),   0, 52, 1)
         oled.oled.show()
+        print("KUBIOS RESPONSE", self.history_response())
 
+    def history_response(self):
+        '''
+        Return the current Kubios DATA as a dictionary for cloud storage.
+ 
+        Returns:
+            dict with keys: Time, Mean PPI, Mean BPM, RMMDS, SDNN, SNS, PNS.
+        '''
+        return {
+            "Time": self.time,
+            "Mean PPI": self.ppi,
+            "Mean BPM": self.bpm,
+            "RMMDS": self.rmssd,
+            "SDNN": self.sdnn,
+            "SNS": self.sns,
+            "PNS": self.pns
+        }
+        
 
 
     def save_json_to_pico(self, filename, data):
@@ -1291,6 +1479,10 @@ class App:
         self.wifi_manager = wifi_manager
         self.coffe_ready = 0
         self.client = client
+        self.wifi_manager.wifi_ana()
+        self.wifi_manager.wifi_on()
+        self.mac = self.wifi_manager.get_pico_mac()
+        self.mqtt.setup_client(self.mac)
 
 
     # ------------------------------------------------------------------
@@ -1451,11 +1643,11 @@ class App:
           6. Return to menu
         '''
 
-        self.wifi_manager.wifi_ana()
-        self.wifi_manager.wifi_on()
+        #self.wifi_manager.wifi_ana()
+        #self.wifi_manager.wifi_on()
 
-        mac = self.wifi_manager.get_pico_mac()
-        self.kubios.mqtt_client(mac)
+        #mac = self.wifi_manager.get_pico_mac()
+        self.kubios.mqtt_client(self.mac)
         print("CLIENT", self.kubios.client)
         self.kubios.connect_and_subscribe()
 
@@ -1472,15 +1664,23 @@ class App:
                 self.btn_val = False
                 return
         self.data.read_off()
-        #ppi_list = self.data.ppi_list
-        ppi_list = self.data.median_filter()
+        ppi_list = self.data.ppi_list
+        #ppi_list = self.data.median_filter()
         print("PPILIST", ppi_list)
         if ppi_list:
-            self.kubios.send_request(mac, ppi_list)
+            self.kubios.send_request(self.mac, ppi_list)
             response = self.kubios.wait_for_response()
             if response:
                 #print(response.get("data", {}).get("analysis", {}))
                 self.kubios.show_responce(self.oled)
+                payload = self.kubios.history_response()
+                self.mqtt.connect_and_subscribe()
+                self.mqtt.add_records(2, payload, self.mac)
+                mqtt_response = self.mqtt.wait_for_response()
+                print("MQTT KUBIOS", mqtt_response)
+                self.mqtt.disconnect()
+
+
                 while not self.rot.push_fifo.has_data():
                     pass
                 self.rot.push_fifo.get()
@@ -1511,7 +1711,7 @@ class Btn:
 accept_btn = Btn(7)
 remove_btn = Btn(9) 
 
-mqtt = 0
+mqtt = MQTT()
 client = User_input()
 
 wifi_manager = Wifi()
@@ -1540,16 +1740,29 @@ app.oled.show_menu(app.menu_item)
 # ---------------------------------------------------------------------------
 client = "Ana"
 app.state = 0
-
+#count = 0
 
 while True:
 
     # --- Development state: history viewer with dummy data ---
     if app.state == 67:
-        app.history.history_data(test_timestamps)
-        app.history.make_options()
-        app.history.show_history(app.rot, app.oled)
-        app.history
+        #print("MAC", app.mac)
+        app.mqtt.setup_client(app.mac)
+        app.mqtt.connect_and_subscribe()
+        #if count == 0: 
+            #app.mqtt.add_device(app.mac)
+            #app.mqtt.add_patient(app.client, app.mac)
+            #response = app.mqtt.wait_for_response()
+            #print("RESPONSE ", response)
+            #if response:
+                #app.mqtt.show_responce(self.oled)
+        app.mqtt.list_patients(app.mac)
+        response = app.mqtt.wait_for_response()
+        print("RESPONSE ", response)
+        count += 1
+            
+        
+
 
     # --- Development state: name entry screen ---
     if app.state == 404:
