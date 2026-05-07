@@ -1622,7 +1622,7 @@ while True:
     elif app.state == 8:
         #TODO put it into a state
         #app.history.local_file()
-        app.history.local_load(self.client)
+        app.history.local_load(app.client)
         app.history.make_options()
         app.state = app.history.show_history(app.rot, app.oled)
     
