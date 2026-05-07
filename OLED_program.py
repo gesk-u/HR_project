@@ -1574,7 +1574,13 @@ while True:
     
     # State 6: coffee readiness (not yet implemented)
     elif app.state == 6:
-        pass
+        if app.coffe_state() == True:
+            oled.coffeegood()
+        else:
+            oled.coffeebad()
+        if app.check_btn_press():
+            app.btn_val = False
+            app.state = 2
     
     # State 7: Kubios cloud HRV analysis
     elif app.state == 7:
