@@ -64,7 +64,7 @@ The Pico needs MicroPython firmware before any code can run on it.
 ### Step 5 — Use the Device
  
 - Unplug the Pico and plug it back in (without holding BOOTSEL)
-- The intro animation plays automatically — press the rotary encoder button to skip to the menu
+- Press on the rotary encoder to begin the intro animation — press it again to go to the menu
 - Rotate the encoder to move between options, push to select
 ---
 
@@ -117,7 +117,6 @@ It returns: Mean HR, Mean PPI, RMSSD, SDNN, SNS index, and PNS index.
 | `main.py` | Main application — state machine and hardware initialisation |
 | `Con.py` | Wi-Fi credentials and connection settings |
 | `Input.py` | User name entry logic |
-| `cross.py` | Additional UI or helper functions |
 | `intro.py` | Intro animation frames |
 | `media.py` | Pixel-art bitmaps and display assets |
 | `OOPs.py` | Supporting classes |
