@@ -740,7 +740,8 @@ class User_input:
         self.user_menu = oled.Menu(16, "Choose Client", ">")
         self._option = 0
         self.history = history
-
+        self.client_ids = 0
+        
         self.localdata = {}
         self.history.local_file()
         self.all_users = list(self.history.localdata.keys())
@@ -791,7 +792,7 @@ class User_input:
                         
                         if result is not None:
                             if result in self.all_users:
-                                self.name_taken(oled)
+                                self.name_taken()
                                 break  
                             else:
                                 self.selected_name = result
@@ -832,7 +833,9 @@ class User_input:
                     self.selected_name = self.name_options[self._option]
                     print(f"Existing client chosen: {self.selected_name}")
                     return 2 # Return to state 2 (Main Menu)
-
+    def name_taken(self):
+        pass
+    
     def enter_name(self, rot, accept_btn, remove_btn, oled):
         # change character
         if rot.rot_fifo.has_data():
@@ -1076,17 +1079,22 @@ class App:
         self._coffe_ready = 0
         self.client = client
         self.client_id = 0
-        self._wifi_manager.wifi_ana()
-        self._wifi_manager.wifi_on()
-        self.mac = self._wifi_manager.get_pico_mac()
-        self.mqtt.setup_client(self.mac)
+        #self._wifi_manager.wifi_ana()
+        #self._wifi_manager.wifi_on()
+        #self.mac = self._wifi_manager.get_pico_mac()
+        #self.mqtt.setup_client(self.mac)
         self.menu_item.add_options(*self.OPTIONS)
 
 
     # ------------------------------------------------------------------
     # Input helpers
     # ------------------------------------------------------------------
-
+    def wifi_on(self):
+        self._wifi_manager.default_wifi()
+        self._wifi_manager.wifi_on()
+        self.mac = self._wifi_manager.get_pico_mac()
+        self.mqtt.setup_client(self.mac)
+        
     def check_btn_press(self):
         '''
         Toggle and return the latched button state.
@@ -1131,6 +1139,7 @@ class App:
         Play the intro animation.
         '''
         interrupted = self.oled.intro_anim(push_fifo=self.rot.push_fifo)
+        self.wifi_on()
         if interrupted:
             self._btn_val = False
             self.state = 2
@@ -1244,7 +1253,7 @@ class App:
           6. Return to menu
         '''
 
-        self._wifi_manager.wifi_ana()
+        self._wifi_manager.default_wifi()
         self._wifi_manager.wifi_on()
 
         #mac = self._wifi_manager.get_pico_mac()
